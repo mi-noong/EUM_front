@@ -3,14 +3,14 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'dart:io';
 
-class RegisterScreen extends StatefulWidget {
+class RegisterScreen extends StatefulWidget { // 회원가입 화면
   const RegisterScreen({super.key});
 
   @override
   _RegisterScreenState createState() => _RegisterScreenState();
 }
 
-class _RegisterScreenState extends State<RegisterScreen> {
+class _RegisterScreenState extends State<RegisterScreen> { // 회원가입 화면 상태
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -18,17 +18,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
+  // 검증할 정보
+  final String _validName = '이은아';
+  final String _validEmail = 'leeah03200320@gmail.com';
+  final String _validMemberId = 'leeah03200320';
+  final String _validPassword = 'leeah0320!!';
+
   Future<void> _register() async {
     if (_formKey.currentState!.validate()) {
-      final baseUrl = 'http://127.0.0.1:8081';
+      final baseUrl = 'http://127.0.0.1:8081'; // 로컬 환경에서 실행
 
-      try {
+      try { // 회원가입 요청
         final response = await http.post(
           Uri.parse('$baseUrl/api/members/signup'), 
           headers: {
             'Content-Type': 'application/json',
           },
-          body: jsonEncode({
+          body: jsonEncode({ // 요청 본문
             'memberId': _memberIdController.text,
             'password': _passwordController.text,
             'name': _nameController.text,
@@ -36,13 +42,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
           }),
         );
 
-        if (response.statusCode == 200) {
+        if (response.statusCode == 200) { 
           print('회원가입 성공: ${response.body}');
-          // 회원가입 성공 시 성공 화면으로 이동
           Navigator.pushNamed(context, '/register_success');
         } else {
           print('회원가입 실패: ${response.body}');
-          // 실패 시 에러 메시지 표시
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('서버 연결에 실패했습니다. 다시 시도해 주세요.')),
           );
@@ -57,7 +61,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) { // 화면 레이아웃 구성
     return Scaffold(
       appBar: AppBar(
         title: const Text('회원가입'),
@@ -83,6 +87,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     if (value == null || value.isEmpty) {
                       return '이름을 입력해주세요';
                     }
+                    if (value != _validName) {
+                      return '올바른 이름을 입력해주세요';
+                    }
                     return null;
                   },
                 ),
@@ -97,8 +104,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     if (value == null || value.isEmpty) {
                       return '이메일을 입력해주세요';
                     }
-                    if (!value.contains('@')) {
-                      return '올바른 이메일 형식이 아닙니다';
+                    if (value != _validEmail) {
+                      return '올바른 이메일을 입력해주세요';
                     }
                     return null;
                   },
@@ -113,6 +120,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   validator: (value) {
                     if (value == null || value.isEmpty) {
                       return '아이디를 입력해주세요';
+                    }
+                    if (value != _validMemberId) {
+                      return '올바른 아이디를 입력해주세요';
                     }
                     return null;
                   },
@@ -129,8 +139,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     if (value == null || value.isEmpty) {
                       return '비밀번호를 입력해주세요';
                     }
-                    if (value.length < 6) {
-                      return '비밀번호는 6자 이상이어야 합니다';
+                    if (value != _validPassword) {
+                      return '올바른 비밀번호를 입력해주세요';
                     }
                     return null;
                   },
@@ -172,7 +182,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   @override
-  void dispose() {
+  void dispose() { // 화면 종료 시 컨트롤러 해제
     _nameController.dispose();
     _emailController.dispose();
     _memberIdController.dispose();
@@ -182,7 +192,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 }
 
-void main() {
+void main() { // 앱 실행
   runApp(MaterialApp(
     home: RegisterScreen(),
     theme: ThemeData(
