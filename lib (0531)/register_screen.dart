@@ -1,8 +1,57 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'register_success_screen.dart';
 
-class RegisterScreen extends StatelessWidget {
+final baseUrl = 'http://10.0.2.2:8081';
+final registerUrl = '$baseUrl/api/auth/register';
+
+class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
+
+  @override
+  State<RegisterScreen> createState() => _RegisterScreenState();
+}
+
+class _RegisterScreenState extends State<RegisterScreen> {
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final TextEditingController _passwordConfirmController = TextEditingController();
+
+  Future<void> _register() async {
+    if (_passwordController.text != _passwordConfirmController.text) {
+      // TODO: 비밀번호 불일치 에러 메시지 표시
+      return;
+    }
+
+    try {
+      final response = await http.post(
+        Uri.parse(registerUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': _nameController.text,
+          'email': _emailController.text,
+          'password': _passwordController.text,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const RegisterSuccessScreen(),
+          ),
+        );
+      } else {
+        // TODO: 회원가입 실패 에러 메시지 표시
+        print('회원가입 실패: ${response.body}');
+      }
+    } catch (e) {
+      print('회원가입 에러: $e');
+      // TODO: 에러 메시지 표시
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,30 +81,23 @@ class RegisterScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 32),
                 // 이름 입력
-                _buildInputField('이름'),
+                _buildInputField('이름', controller: _nameController),
                 const SizedBox(height: 16),
                 // 이메일 입력
-                _buildInputField('이메일'),
+                _buildInputField('이메일', controller: _emailController),
                 const SizedBox(height: 16),
                 // 비밀번호 입력
-                _buildInputField('비밀번호', isPassword: true),
+                _buildInputField('비밀번호', controller: _passwordController, isPassword: true),
                 const SizedBox(height: 16),
                 // 비밀번호 확인
-                _buildInputField('비밀번호 확인', isPassword: true),
+                _buildInputField('비밀번호 확인', controller: _passwordConfirmController, isPassword: true),
                 const SizedBox(height: 32),
                 // 회원가입 버튼
                 SizedBox(
                   width: double.infinity,
                   height: 48,
                   child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const RegisterSuccessScreen(),
-                        ),
-                      );
-                    },
+                    onPressed: _register,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF1EA1F7),
                       shape: RoundedRectangleBorder(
@@ -82,7 +124,7 @@ class RegisterScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildInputField(String label, {bool isPassword = false}) {
+  Widget _buildInputField(String label, {bool isPassword = false, required TextEditingController controller}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -95,6 +137,7 @@ class RegisterScreen extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         TextField(
+          controller: controller,
           obscureText: isPassword,
           decoration: InputDecoration(
             hintText: 'Enter your $label',
