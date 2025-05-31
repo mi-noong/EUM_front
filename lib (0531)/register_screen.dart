@@ -16,6 +16,7 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _idController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _passwordConfirmController = TextEditingController();
 
@@ -32,6 +33,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         body: jsonEncode({
           'name': _nameController.text,
           'email': _emailController.text,
+          'id': _idController.text,
           'password': _passwordController.text,
         }),
       );
@@ -81,16 +83,19 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 32),
                 // 이름 입력
-                _buildInputField('이름', controller: _nameController),
+                _buildInputField('사용자 이름', controller: _nameController, hint: 'Enter your Name'),
                 const SizedBox(height: 16),
                 // 이메일 입력
-                _buildInputField('이메일', controller: _emailController),
+                _buildInputField('이메일', controller: _emailController, hint: 'Enter your Email'),
+                const SizedBox(height: 16),
+                // 아이디 입력
+                _buildInputField('아이디', controller: _idController, hint: 'Enter your ID'),
                 const SizedBox(height: 16),
                 // 비밀번호 입력
-                _buildInputField('비밀번호', controller: _passwordController, isPassword: true),
+                _buildInputField('비밀번호', controller: _passwordController, isPassword: true, hint: 'Enter your Password'),
                 const SizedBox(height: 16),
                 // 비밀번호 확인
-                _buildInputField('비밀번호 확인', controller: _passwordConfirmController, isPassword: true),
+                _buildInputField('비밀번호 확인', controller: _passwordConfirmController, isPassword: true, hint: 'Enter your Password'),
                 const SizedBox(height: 32),
                 // 회원가입 버튼
                 SizedBox(
@@ -124,7 +129,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  Widget _buildInputField(String label, {bool isPassword = false, required TextEditingController controller}) {
+  Widget _buildInputField(String label, {bool isPassword = false, required TextEditingController controller, required String hint}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -140,7 +145,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           controller: controller,
           obscureText: isPassword,
           decoration: InputDecoration(
-            hintText: 'Enter your $label',
+            hintText: hint,
             filled: true,
             fillColor: const Color(0xFFE5E8EC),
             border: OutlineInputBorder(
