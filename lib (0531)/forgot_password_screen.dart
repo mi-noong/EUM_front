@@ -1,8 +1,49 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'forgot_password_success_screen.dart';
 
-class ForgotPasswordScreen extends StatelessWidget {
+final baseUrl = 'http://10.0.2.2:8081';
+final forgotPasswordUrl = '$baseUrl/api/auth/forgot-password';
+
+class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({Key? key}) : super(key: key);
+
+  @override
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
+}
+
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+  final TextEditingController _emailController = TextEditingController();
+
+  Future<void> _sendResetLink() async {
+    try {
+      final response = await http.post(
+        Uri.parse(forgotPasswordUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'email': _emailController.text,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ForgotPasswordSuccessScreen(
+              email: _emailController.text,
+            ),
+          ),
+        );
+      } else {
+        // TODO: 비밀번호 재설정 링크 전송 실패 에러 메시지 표시
+        print('비밀번호 재설정 링크 전송 실패: ${response.body}');
+      }
+    } catch (e) {
+      print('비밀번호 재설정 링크 전송 에러: $e');
+      // TODO: 에러 메시지 표시
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,6 +83,7 @@ class ForgotPasswordScreen extends StatelessWidget {
                 const SizedBox(height: 32),
                 // 이메일 입력
                 TextField(
+                  controller: _emailController,
                   decoration: InputDecoration(
                     hintText: 'Enter your email',
                     filled: true,
@@ -62,14 +104,7 @@ class ForgotPasswordScreen extends StatelessWidget {
                   width: double.infinity,
                   height: 48,
                   child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const ForgotPasswordSuccessScreen(),
-                        ),
-                      );
-                    },
+                    onPressed: _sendResetLink,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF1EA1F7),
                       shape: RoundedRectangleBorder(
