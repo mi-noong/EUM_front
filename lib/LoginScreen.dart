@@ -1,7 +1,65 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'RegisterScreen.dart';
+import 'SettingScreen.dart';
 
-class LoginScreen extends StatelessWidget {
+class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final TextEditingController _idController = TextEditingController();
+  final TextEditingController _pwController = TextEditingController();
+  String? _errorMessage;
+  bool _isLoading = false;
+
+  Future<void> _login() async {
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    final baseUrl = 'http://10.0.2.2:8081';
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/members/login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'memberId': _idController.text,
+          'password': _pwController.text,
+        }),
+      );
+      if (response.statusCode == 200) {
+        // 로그인 성공 -> SettingScreen 이동
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const SettingScreen()),
+        );
+      } else {
+        setState(() {
+          _errorMessage = '아이디 또는 비밀번호가 맞지 않습니다.\n다시 시도해주시기 바랍니다.';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = '서버 연결에 실패했습니다. 다시 시도해 주세요.';
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _idController.dispose();
+    _pwController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +101,7 @@ class LoginScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   TextField(
+                    controller: _idController,
                     decoration: InputDecoration(
                       hintText: 'Enter your ID',
                       filled: true,
@@ -65,6 +124,7 @@ class LoginScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   TextField(
+                    controller: _pwController,
                     obscureText: true,
                     decoration: InputDecoration(
                       hintText: 'Enter your Password',
@@ -77,13 +137,31 @@ class LoginScreen extends StatelessWidget {
                       contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  if (_errorMessage != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      decoration: BoxDecoration(
+                        color: Color(0xFFFFE5E5),
+                        border: Border.all(color: Colors.redAccent, width: 2),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.red, fontSize: 16, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 32),
                   // 로그인 버튼
                   SizedBox(
                     width: double.infinity,
                     height: 48,
                     child: ElevatedButton(
-                      onPressed: () {},
+                      onPressed: _isLoading ? null : _login,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Color(0xFF1EA1F7),
                         shape: RoundedRectangleBorder(
@@ -91,14 +169,23 @@ class LoginScreen extends StatelessWidget {
                         ),
                         elevation: 0,
                       ),
-                      child: const Text(
-                        '로그인',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 3,
+                              ),
+                            )
+                          : const Text(
+                              '로그인',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -107,7 +194,8 @@ class LoginScreen extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       TextButton(
-                        onPressed: () {},
+                        onPressed: () {
+                        },
                         child: Text(
                           '아이디 찾기',
                           style: TextStyle(color: Colors.black87, fontSize: 20),
@@ -157,7 +245,12 @@ class LoginScreen extends StatelessWidget {
                   const SizedBox(height: 32),
                   // 회원가입
                   TextButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const RegisterScreen()),
+                      );
+                    },
                     style: TextButton.styleFrom(
                       padding: EdgeInsets.symmetric(vertical: 8),
                       foregroundColor: Colors.black,
