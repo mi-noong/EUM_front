@@ -1,5 +1,8 @@
 # EUM_front
-SplashScreen -> Login page까지 내용 </br></br>
-※eum\android\app\src\main\res 경로에서 mipmap으로 시작되는 파일 사진 eum icon 사진으로 바꾸기 </br>
--> assets에 ic_launcher로 첨부
-![Image](https://github.com/user-attachments/assets/c7b7fc63-3dbc-4df2-9ffa-2909ada2e698)
+SplashScreen -> SettingScreen까지 내용 </br></br>
+
+# ※수정내용
+LoginScreen- 내용 업데이트</br>
+register_screen.dart -> RegisterScreen.dart로 이름 수정, 내용 업데이트</br>
+register_success_screen.dart -> RegisterSuccessScreen.dart로 이름 수정, 내용 업데이트</br>
+SettingScreen, HelpScreen -> create
