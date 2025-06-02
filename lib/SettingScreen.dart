@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'HelpScreen.dart';
+import 'PasswordSuccessScreen.dart';
 
 class SettingScreen extends StatefulWidget {
   const SettingScreen({Key? key}) : super(key: key);
@@ -80,4 +81,4 @@ class _SettingScreenState extends State<SettingScreen> {
       ),
     );
   }
-}
+} 
