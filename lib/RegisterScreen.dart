@@ -1,10 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'RegisterSuccessScreen.dart';
-
-final baseUrl = 'http://10.0.2.2:8081';
-final registerUrl = '$baseUrl/api/members/signup';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({Key? key}) : super(key: key);
