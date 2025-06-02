@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'RegisterScreen.dart';
 import 'SettingScreen.dart';
+import 'PasswordScreen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -208,7 +209,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         margin: EdgeInsets.symmetric(horizontal: 8),
                       ),
                       TextButton(
-                        onPressed: () {},
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (context) => PasswordScreen()),
+                          );
+                        },
                         child: Text(
                           '비밀번호 찾기',
                           style: TextStyle(color: Colors.black87, fontSize: 20),
