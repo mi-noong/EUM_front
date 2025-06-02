@@ -20,39 +20,42 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _passwordConfirmController = TextEditingController();
 
-  Future<void> _register() async {
-    if (_passwordController.text != _passwordConfirmController.text) {
-      // TODO: 비밀번호 불일치 에러 메시지 표시
+  bool _passwordMismatch = false;
+  String? _inputError;
+
+  void _register() {
+    setState(() {
+      _passwordMismatch = false;
+      _inputError = null;
+    });
+    if (_nameController.text.isEmpty ||
+        _emailController.text.isEmpty ||
+        _idController.text.isEmpty ||
+        _passwordController.text.isEmpty ||
+        _passwordConfirmController.text.isEmpty) {
+      setState(() {
+        _inputError = '정보를 입력해주세요.';
+      });
       return;
     }
-
-    try {
-      final response = await http.post(
-        Uri.parse(registerUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'name': _nameController.text,
-          'email': _emailController.text,
-          'id': _idController.text,
-          'password': _passwordController.text,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => const RegisterSuccessScreen(),
-          ),
-        );
-      } else {
-        // TODO: 회원가입 실패 에러 메시지 표시
-        print('회원가입 실패: ${response.body}');
-      }
-    } catch (e) {
-      print('회원가입 에러: $e');
-      // TODO: 에러 메시지 표시
+    if (_passwordController.text != _passwordConfirmController.text) {
+      setState(() {
+        _passwordMismatch = true;
+      });
+      return;
     }
+    // 비밀번호가 일치하면 바로 완료 페이지로 이동, 정보 전달
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RegisterSuccessScreen(
+          name: _nameController.text,
+          email: _emailController.text,
+          id: _idController.text,
+          password: _passwordController.text,
+        ),
+      ),
+    );
   }
 
   @override
@@ -74,11 +77,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 24),
                 // 회원가입 제목
-                const Text(
-                  '회원가입',
-                  style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
+                const Center(
+                  child: Text(
+                    '회원가입',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 32),
@@ -95,7 +100,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 _buildInputField('비밀번호', controller: _passwordController, isPassword: true, hint: 'Enter your Password'),
                 const SizedBox(height: 16),
                 // 비밀번호 확인
-                _buildInputField('비밀번호 확인', controller: _passwordConfirmController, isPassword: true, hint: 'Enter your Password'),
+                _buildInputField('비밀번호 확인', controller: _passwordConfirmController, isPassword: true, hint: 'Enter your Password', isError: _passwordMismatch),
+                if (_inputError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, left: 4),
+                    child: Text(
+                      _inputError!,
+                      style: TextStyle(color: Colors.red[700], fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                if (_passwordMismatch)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4, left: 4),
+                    child: Text(
+                      '비밀번호가 일치하지 않습니다.',
+                      style: TextStyle(color: Colors.red[700], fontSize: 14, fontWeight: FontWeight.w500),
+                    ),
+                  ),
                 const SizedBox(height: 32),
                 // 회원가입 버튼
                 SizedBox(
@@ -129,7 +150,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  Widget _buildInputField(String label, {bool isPassword = false, required TextEditingController controller, required String hint}) {
+  Widget _buildInputField(String label, {bool isPassword = false, required TextEditingController controller, required String hint, bool isError = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -150,7 +171,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             fillColor: const Color(0xFFE5E8EC),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide.none,
+              borderSide: isError ? BorderSide(color: Colors.red, width: 2) : BorderSide.none,
             ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
@@ -161,4 +182,4 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ],
     );
   }
-}
+} 
