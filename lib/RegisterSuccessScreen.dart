@@ -1,8 +1,53 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import 'LoginScreen.dart';
 
-class RegisterSuccessScreen extends StatelessWidget {
-  const RegisterSuccessScreen({Key? key}) : super(key: key);
+final baseUrl = 'http://10.0.2.2:8081';
+final registerUrl = '$baseUrl/api/members/signup';
+
+class RegisterSuccessScreen extends StatefulWidget {
+  final String name;
+  final String email;
+  final String id;
+  final String password;
+
+  const RegisterSuccessScreen({
+    Key? key,
+    required this.name,
+    required this.email,
+    required this.id,
+    required this.password,
+  }) : super(key: key);
+
+  @override
+  State<RegisterSuccessScreen> createState() => _RegisterSuccessScreenState();
+}
+
+class _RegisterSuccessScreenState extends State<RegisterSuccessScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _sendRegisterInfo();
+  }
+
+  Future<void> _sendRegisterInfo() async {
+    try {
+      await http.post(
+        Uri.parse(registerUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': widget.name,
+          'email': widget.email,
+          'id': widget.id,
+          'password': widget.password,
+        }),
+      );
+    } catch (e) {
+      // 실패해도 UI는 그대로 진행
+      print('회원가입 정보 전송 실패: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -15,32 +60,29 @@ class RegisterSuccessScreen extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // 성공 아이콘
-                const Icon(
-                  Icons.check_circle_outline,
-                  size: 80,
+                Icon(
+                  Icons.check_circle,
+                  size: 100,
                   color: Color(0xFF1EA1F7),
                 ),
-                const SizedBox(height: 32),
-                // 성공 메시지
-                const Text(
-                  '회원가입이 완료되었습니다',
+                const SizedBox(height: 40),
+                Text(
+                  '회원가입이\n완료되었습니다.',
+                  textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // 설명 텍스트
-                const Text(
-                  '로그인하여 서비스를 이용해보세요.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.black54,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.black,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black26,
+                        offset: Offset(2, 2),
+                        blurRadius: 4,
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 48),
-                // 로그인 화면으로 이동 버튼
                 SizedBox(
                   width: double.infinity,
                   height: 48,
@@ -49,7 +91,7 @@ class RegisterSuccessScreen extends StatelessWidget {
                       Navigator.pushAndRemoveUntil(
                         context,
                         MaterialPageRoute(builder: (context) => const LoginScreen()),
-                            (route) => false,
+                        (route) => false,
                       );
                     },
                     style: ElevatedButton.styleFrom(
@@ -60,7 +102,7 @@ class RegisterSuccessScreen extends StatelessWidget {
                       elevation: 0,
                     ),
                     child: const Text(
-                      '로그인하기',
+                      '로그인',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -76,4 +118,4 @@ class RegisterSuccessScreen extends StatelessWidget {
       ),
     );
   }
-}
+} 
