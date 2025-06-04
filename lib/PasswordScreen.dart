@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'PasswordSuccessScreen.dart';
 
 final baseUrl = 'http://10.0.2.2:8081';
-final forgotPasswordUrl = '$baseUrl/api/members/signup';
+final forgotPasswordUrl = '$baseUrl/api/members/find-password';
 
 class PasswordScreen extends StatefulWidget {
   const PasswordScreen({Key? key}) : super(key: key);
