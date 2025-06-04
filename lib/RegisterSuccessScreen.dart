@@ -9,7 +9,7 @@ final registerUrl = '$baseUrl/api/members/signup';
 class RegisterSuccessScreen extends StatefulWidget {
   final String name;
   final String email;
-  final String id;
+  final String id;       // 아이디(=username)
   final String password;
 
   const RegisterSuccessScreen({
@@ -33,18 +33,23 @@ class _RegisterSuccessScreenState extends State<RegisterSuccessScreen> {
 
   Future<void> _sendRegisterInfo() async {
     try {
-      await http.post(
+      final response = await http.post(
         Uri.parse(registerUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
+          'username': widget.id,       // 여기를 'username'으로 수정!
+          'password': widget.password,
           'name': widget.name,
           'email': widget.email,
-          'id': widget.id,
-          'password': widget.password,
         }),
       );
+
+      if (response.statusCode == 200) {
+        print('회원가입 성공');
+      } else {
+        print('회원가입 실패: ${response.statusCode} - ${response.body}');
+      }
     } catch (e) {
-      // 실패해도 UI는 그대로 진행
       print('회원가입 정보 전송 실패: $e');
     }
   }
@@ -63,10 +68,10 @@ class _RegisterSuccessScreenState extends State<RegisterSuccessScreen> {
                 Icon(
                   Icons.check_circle,
                   size: 100,
-                  color: Color(0xFF1EA1F7),
+                  color: const Color(0xFF1EA1F7),
                 ),
                 const SizedBox(height: 40),
-                Text(
+                const Text(
                   '회원가입이\n완료되었습니다.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
@@ -91,7 +96,7 @@ class _RegisterSuccessScreenState extends State<RegisterSuccessScreen> {
                       Navigator.pushAndRemoveUntil(
                         context,
                         MaterialPageRoute(builder: (context) => const LoginScreen()),
-                        (route) => false,
+                            (route) => false,
                       );
                     },
                     style: ElevatedButton.styleFrom(
@@ -118,4 +123,4 @@ class _RegisterSuccessScreenState extends State<RegisterSuccessScreen> {
       ),
     );
   }
-} 
+}
