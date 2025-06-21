@@ -32,7 +32,7 @@ class _PasswordScreenState extends State<PasswordScreen> {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'name': _nameController.text,
-          'id': _idController.text,
+          'memberId': _idController.text,
           'email': _emailController.text,
         }),
       );
@@ -42,7 +42,7 @@ class _PasswordScreenState extends State<PasswordScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => PasswordSuccessScreen( 
+            builder: (context) => PasswordSuccessScreen(
               email: _emailController.text,
             ),
           ),
@@ -203,4 +203,4 @@ class _PasswordScreenState extends State<PasswordScreen> {
       ],
     );
   }
-} 
+}
