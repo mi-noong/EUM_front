@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'IdforgotScreen.dart';
 import 'RegisterScreen.dart';
 import 'SettingScreen.dart';
 import 'PasswordScreen.dart';
+
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -172,21 +174,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       child: _isLoading
                           ? const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                color: Colors.white,
-                                strokeWidth: 3,
-                              ),
-                            )
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                          color: Colors.white,
+                          strokeWidth: 3,
+                        ),
+                      )
                           : const Text(
-                              '로그인',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
+                        '로그인',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -196,6 +198,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       TextButton(
                         onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const IdforgotScreen()),
+                          );
                         },
                         child: Text(
                           '아이디 찾기',
@@ -210,8 +216,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       TextButton(
                         onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(builder: (context) => PasswordScreen()),
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const PasswordScreen()),
                           );
                         },
                         child: Text(
