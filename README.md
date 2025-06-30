@@ -1,8 +1,8 @@
 # EUM_front
-SplashScreen -> SettingScreen까지 내용 </br></br>
+SplashScreen -> 플로팅 위젯까지 내용 </br></br>
 
-# ※수정내용
-main.dart, LoginScreen.dart -> 내용 업데이트</br>
-register_screen.dart -> RegisterScreen.dart로 이름 수정, 내용 업데이트</br>
-register_success_screen.dart -> RegisterSuccessScreen.dart로 이름 수정, 내용 업데이트</br>
-SettingScreen, HelpScreen -> create
+# Update
+pubspec.yaml, SettingScreen.dart, AndroidManifest.xml, MainActivity.kt </br></br>
+# Create
+Shake.dart, OverlayService.kt, layout 파일, overlay_layout.xml,</br>
+(drawable 파일) handle_bg.xml, launch_background.xml, overlay_bg.xml, ic_ai.png, ic_image.png, ic_launcher.png, ic_zoom.png
