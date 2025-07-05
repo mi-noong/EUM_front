@@ -1,4 +1,11 @@
-package com.eum.eum
+package com.example.eum //본인의 패키지명으로 수정 필요
+
+import android.os.Bundle
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+import com.navercorp.nid.NaverIdLoginSDK
+import com.navercorp.nid.oauth.OAuthLoginCallback
 
 import android.app.ActivityManager
 import android.content.BroadcastReceiver
@@ -8,20 +15,36 @@ import android.content.IntentFilter
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
-import io.flutter.embedding.android.FlutterActivity
-import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.plugin.common.MethodChannel
 
-class MainActivity: FlutterActivity() {
-    private val CHANNEL = "floating_widget"
+class MainActivity : FlutterActivity() {
+    private val NAVER_CHANNEL = "com.example.eum/naver_login"
+    private val OVERLAY_CHANNEL = "floating_widget"
     private var isOverlayVisible = false
     private var overlayReceiver: BroadcastReceiver? = null
     private val TAG = "MainActivity"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        
-        // 브로드캐스트 리시버 설정
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, NAVER_CHANNEL).setMethodCallHandler { call, result ->
+            if (call.method == "login") {
+                NaverIdLoginSDK.authenticate(this, object : OAuthLoginCallback {
+                    override fun onSuccess() {
+                        val accessToken = NaverIdLoginSDK.getAccessToken()
+                        result.success(accessToken)
+                    }
+                    override fun onFailure(httpStatus: Int, message: String) {
+                        result.error("NAVER_LOGIN_FAILED", message, null)
+                    }
+                    override fun onError(errorCode: Int, message: String) {
+                        result.error("NAVER_LOGIN_ERROR", message, null)
+                    }
+                })
+            } else {
+                result.notImplemented()
+            }
+        }
+
         overlayReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 when (intent?.action) {
@@ -36,7 +59,6 @@ class MainActivity: FlutterActivity() {
                 }
             }
         }
-        
         try {
             val filter = IntentFilter().apply {
                 addAction("OVERLAY_SERVICE_STARTED")
@@ -47,8 +69,8 @@ class MainActivity: FlutterActivity() {
         } catch (e: Exception) {
             Log.e(TAG, "브로드캐스트 리시버 등록 실패: ${e.message}")
         }
-        
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, OVERLAY_CHANNEL).setMethodCallHandler { call, result ->
             Log.d(TAG, "메서드 호출: ${call.method}")
             when (call.method) {
                 "showOverlay" -> {
@@ -82,7 +104,6 @@ class MainActivity: FlutterActivity() {
                     }
                 }
                 "isOverlayVisible" -> {
-                    // 서비스 상태를 직접 확인
                     val isServiceRunning = isServiceRunning(OverlayService::class.java)
                     Log.d(TAG, "오버레이 상태 확인: 브로드캐스트 상태=$isOverlayVisible, 서비스 상태=$isServiceRunning")
                     result.success(isServiceRunning)
@@ -127,7 +148,7 @@ class MainActivity: FlutterActivity() {
             }
         }
     }
-    
+
     private fun isServiceRunning(serviceClass: Class<*>): Boolean {
         val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         for (service in manager.getRunningServices(Integer.MAX_VALUE)) {
@@ -137,7 +158,7 @@ class MainActivity: FlutterActivity() {
         }
         return false
     }
-    
+
     override fun onDestroy() {
         super.onDestroy()
         try {
@@ -147,6 +168,20 @@ class MainActivity: FlutterActivity() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "브로드캐스트 리시버 해제 실패: ${e.message}")
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        try {
+            NaverIdLoginSDK.initialize(
+                this,
+                "NT7nJduTFYkJRyR_P9uV",
+                "BS_kyhA4Fa",
+                "EUM"
+            )
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }
