@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'IdforgotScreen.dart';
 import 'RegisterScreen.dart';
 import 'SettingScreen.dart';
 import 'PasswordScreen.dart';
-
+import 'SocialLoginWidget.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({Key? key}) : super(key: key);
@@ -174,21 +173,21 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       child: _isLoading
                           ? const SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 3,
-                        ),
-                      )
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 3,
+                              ),
+                            )
                           : const Text(
-                        '로그인',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
+                              '로그인',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -198,10 +197,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       TextButton(
                         onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => const IdforgotScreen()),
-                          );
                         },
                         child: Text(
                           '아이디 찾기',
@@ -216,9 +211,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       TextButton(
                         onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => const PasswordScreen()),
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (context) => PasswordScreen()),
                           );
                         },
                         child: Text(
@@ -232,28 +226,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Divider(thickness: 1, color: Colors.grey[200]),
                   const SizedBox(height: 24),
                   // 소셜 로그인
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _SocialIconButton(
-                        imagePath: 'assets/google.png',
-                        onTap: () {},
-                        label: '구글로 로그인하기', //대체텍스트
-                      ),
-                      const SizedBox(width: 32),
-                      _SocialIconButton(
-                        imagePath: 'assets/naver.png',
-                        onTap: () {},
-                        label: '네이버로 로그인하기', //대체텍스트
-                      ),
-                      const SizedBox(width: 32),
-                      _SocialIconButton(
-                        imagePath: 'assets/kakaotalk.png',
-                        onTap: () {},
-                        label: '카카오톡으로 로그인하기', //대체텍스트
-                      ),
-                    ],
-                  ),
+                  const SocialLoginWidget(),
                   const SizedBox(height: 32),
                   // 회원가입
                   TextButton(
