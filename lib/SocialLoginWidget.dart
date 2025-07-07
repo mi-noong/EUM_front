@@ -5,6 +5,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/services.dart';
+import 'SettingScreen.dart';
 
 class SocialLoginWidget extends StatefulWidget {
   const SocialLoginWidget({Key? key}) : super(key: key);
@@ -34,12 +35,15 @@ class _SocialLoginWidgetState extends State<SocialLoginWidget> {
         token = await UserApi.instance.loginWithKakaoAccount();
       }
       User user = await UserApi.instance.me();
-      setState(() {
-        _userInfo = '카카오 닉네임: \\${user.kakaoAccount?.profile?.nickname}\\n카카오 이메일: \\${user.kakaoAccount?.email}';
-      });
+      
+      // 카카오 로그인 성공 시 SettingScreen으로 이동
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const SettingScreen()),
+      );
     } catch (error) {
       setState(() {
-        _userInfo = '카카오 로그인 실패: \\${error.toString()}';
+        _userInfo = '카카오 로그인 실패: ${error.toString()}';
       });
     } finally {
       setState(() {
@@ -60,16 +64,12 @@ class _SocialLoginWidgetState extends State<SocialLoginWidget> {
       print('GoogleSignIn 설정 확인: ${_googleSignIn.scopes}');
       print('GoogleSignIn 클라이언트 ID: ${_googleSignIn.clientId}');
       final account = await _googleSignIn.signIn();
-      print('GoogleSignIn 결과: \\${account?.email}');
+      print('GoogleSignIn 결과: ${account?.email}');
       
       if (account != null) {
         print('계정 인증 시작');
         final auth = await account.authentication;
-        print('인증 완료: accessToken 있음: \\${auth.accessToken != null}');
-        
-        setState(() {
-          _userInfo = '구글 닉네임: \\${account.displayName}\\n구글 이메일: \\${account.email}';
-        });
+        print('인증 완료: accessToken 있음: ${auth.accessToken != null}');
         
         // 백엔드로 idToken 전송 예시
         if (auth.idToken != null) {
@@ -79,8 +79,14 @@ class _SocialLoginWidgetState extends State<SocialLoginWidget> {
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({'idToken': auth.idToken}),
           );
-          print('백엔드 응답: \\${response.statusCode}');
+          print('백엔드 응답: ${response.statusCode}');
         }
+        
+        // 구글 로그인 성공 시 SettingScreen으로 이동
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const SettingScreen()),
+        );
       } else {
         print('구글 로그인 취소됨');
         setState(() {
@@ -88,9 +94,9 @@ class _SocialLoginWidgetState extends State<SocialLoginWidget> {
         });
       }
     } catch (error) {
-      print('구글 로그인 에러: \\${error.toString()}');
+      print('구글 로그인 에러: ${error.toString()}');
       setState(() {
-        _userInfo = '구글 로그인 실패: \\${error.toString()}';
+        _userInfo = '구글 로그인 실패: ${error.toString()}';
       });
     } finally {
       setState(() {
@@ -107,9 +113,11 @@ class _SocialLoginWidgetState extends State<SocialLoginWidget> {
     try {
       final result = await platform.invokeMethod('login');
       if (result != null) {
-        setState(() {
-          _userInfo = '네이버 로그인 성공: $result';
-        });
+        // 네이버 로그인 성공 시 SettingScreen으로 이동
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const SettingScreen()),
+        );
       } else {
         setState(() {
           _userInfo = '네이버 로그인 실패';
@@ -117,7 +125,7 @@ class _SocialLoginWidgetState extends State<SocialLoginWidget> {
       }
     } catch (error) {
       setState(() {
-        _userInfo = '네이버 로그인 실패: \\${error.toString()}';
+        _userInfo = '네이버 로그인 실패: ${error.toString()}';
       });
     } finally {
       setState(() {
