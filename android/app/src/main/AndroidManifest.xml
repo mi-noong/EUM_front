@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.eum">
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- 오버레이 기능 관련 권한 추가 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="eum"
+        android:name=".EumApplication"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"
@@ -79,3 +80,4 @@
         <package android:name="com.kakao.talk" />
     </queries>
 </manifest>
+
