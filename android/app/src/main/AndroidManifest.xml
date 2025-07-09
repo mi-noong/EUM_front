@@ -36,7 +36,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="kakaoc15bd6ab806014b0fde0e7a2f5b4de7e" />
+                <data android:scheme="kakaoc15bd6ab806014b0fde0e7a2f5b4de7e" android:host="oauth" />
             </intent-filter>
 
             <!-- 네이버 로그인을 위한 intent-filter 추가 -->
