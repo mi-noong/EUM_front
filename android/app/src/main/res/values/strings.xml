@@ -2,4 +2,5 @@
     <string name="naver_client_id">NT7nJduTFYkJRyR_P9uV</string>
     <string name="naver_client_secret">BS_kyhA4Fa</string>
     <string name="naver_client_name">EUM</string>
+    <string name="kakao_app_key">c15bd6ab806014b0fde0e7a2f5b4de7e</string>
 </resources> 
