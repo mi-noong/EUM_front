@@ -1,4 +1,4 @@
-package com.eum.eum
+package com.example.eum
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -73,7 +73,7 @@ class OverlayService : Service() {
             NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("EUM")
                 .setContentText("오버레이 서비스가 실행 중입니다")
-                .setSmallIcon(R.drawable.ic_launcher)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .build()
         } catch (e: Exception) {
@@ -91,7 +91,7 @@ class OverlayService : Service() {
         try {
             Log.d(TAG, "오버레이 뷰 추가 시작")
             val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
-            overlayView = inflater.inflate(R.layout.overlay_layout, null)
+            overlayView = inflater.inflate(com.example.eum.R.layout.overlay_layout, null)
 
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
@@ -109,8 +109,8 @@ class OverlayService : Service() {
             Log.d(TAG, "오버레이 뷰 추가 완료")
 
             // 스와이프 제스처 감지
-            val handle = overlayView?.findViewById<View>(R.id.handle)
-            val menu = overlayView?.findViewById<LinearLayout>(R.id.menuLayout)
+            val handle = overlayView?.findViewById<View>(com.example.eum.R.id.handle)
+            val menu = overlayView?.findViewById<LinearLayout>(com.example.eum.R.id.menuLayout)
             var isMenuOpen = false
 
             handle?.setOnTouchListener(object : View.OnTouchListener {
@@ -138,6 +138,27 @@ class OverlayService : Service() {
                     return true
                 }
             })
+
+            // 이미지 분석 버튼 클릭 이벤트
+            val btnOcr = overlayView?.findViewById<LinearLayout>(com.example.eum.R.id.btn_ocr)
+            Log.d(TAG, "이미지 분석 버튼 찾기: ${btnOcr != null}")
+            btnOcr?.setOnClickListener {
+                try {
+                    Log.d(TAG, "이미지 분석 버튼 클릭됨!")
+                    // Flutter 앱에 이미지 분석 모드 시작을 알림
+                    val intent = Intent("START_IMAGE_ANALYSIS")
+                    intent.setPackage(packageName) // 명시적으로 패키지 지정
+                    sendBroadcast(intent)
+                    Log.d(TAG, "START_IMAGE_ANALYSIS 브로드캐스트 전송 완료 - 패키지: $packageName")
+                    
+                    // 메뉴 닫기
+                    menu?.visibility = View.GONE
+                    isMenuOpen = false
+                    Log.d(TAG, "메뉴 닫기 완료")
+                } catch (e: Exception) {
+                    Log.e(TAG, "이미지 분석 버튼 클릭 처리 실패: ${e.message}")
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "오버레이 뷰 추가 실패: ${e.message}")
             stopSelf()
@@ -152,7 +173,8 @@ class OverlayService : Service() {
                 windowManager?.removeView(overlayView)
                 Log.d(TAG, "오버레이 뷰 제거 완료")
             }
-            
+            // MediaProjectionService도 함께 종료
+            stopService(Intent(this, MediaProjectionService::class.java))
             // 서비스가 종료되었음을 MainActivity에 알림
             val broadcastIntent = Intent("OVERLAY_SERVICE_STOPPED")
             sendBroadcast(broadcastIntent)
