@@ -1,16 +1,29 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.eum">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
     <!-- 오버레이 기능 관련 권한 추가 -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- 이미지 분석 기능 관련 권한 추가 -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <!-- 오디오 재생 관련 권한 추가 -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application
         android:label="eum"
-        android:name=".EumApplication"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:usesCleartextTraffic="true">
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.eum.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
@@ -23,21 +36,20 @@
                  while the Flutter UI initializes. After that, this theme continues
                  to determine the Window background behind the Flutter UI. -->
             <meta-data
-              android:name="io.flutter.embedding.android.NormalTheme"
-              android:resource="@style/NormalTheme"
-              />
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme"
+                />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            
+
             <!-- 카카오 로그인을 위한 intent-filter 추가 -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="kakaoc15bd6ab806014b0fde0e7a2f5b4de7e" android:host="oauth"/>
-                <data android:scheme="https" android:host="example.com" android:pathPrefix="/oauth"/>
+                <data android:scheme="kakaoc15bd6ab806014b0fde0e7a2f5b4de7e" />
             </intent-filter>
 
             <!-- 네이버 로그인을 위한 intent-filter 추가 -->
@@ -48,24 +60,24 @@
                 <data android:scheme="naverNT7nJduTFYkJRyR_P9uV" />
             </intent-filter>
         </activity>
-        <!-- 카카오 로그인 DeepLink 처리용 Activity -->
-        <activity
-            android:name="com.kakao.sdk.auth.AuthCodeHandlerActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW"/>
-                <category android:name="android.intent.category.DEFAULT"/>
-                <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="kakaoc15bd6ab806014b0fde0e7a2f5b4de7e"/>
-            </intent-filter>
-        </activity>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
         <!-- 오버레이 서비스 등록 -->
-        <service android:name=".OverlayService" android:exported="false" android:foregroundServiceType="dataSync"/>
+        <service android:name="com.example.eum.OverlayService" android:exported="false" android:foregroundServiceType="dataSync"/>
+        <!-- 오버레이 캡처 서비스 등록 -->
+        <service android:name="com.example.eum.OverlayCaptureService" android:exported="false" android:foregroundServiceType="dataSync"/>
+        <!-- MediaProjection 서비스 등록 -->
+        <service android:name="com.example.eum.MediaProjectionService" android:exported="false" android:foregroundServiceType="mediaProjection"/>
+        <!-- 화면 캡처 액티비티 등록 -->
+        <activity
+            android:name="com.example.eum.ScreenCaptureActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and
@@ -81,5 +93,4 @@
         <package android:name="com.kakao.talk" />
     </queries>
 </manifest>
-
 
