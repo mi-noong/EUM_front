@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace = "com.example.eum"
-    compileSdk = 35
+    compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -24,10 +24,17 @@ android {
         applicationId = "com.example.eum"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = 23
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    // Porcupine assets 파일을 APK에 포함시키기 위한 설정
+    sourceSets {
+        getByName("main") {
+            assets.srcDirs("src/main/assets", "../../assets")
+        }
     }
 
     buildTypes {
@@ -36,6 +43,7 @@ android {
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
         }
+
     }
 }
 
@@ -53,4 +61,5 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.9.3")
     implementation("com.airbnb.android:lottie:6.4.0")
     implementation("com.navercorp.nid:oauth:5.10.0")
+    implementation("ai.picovoice:porcupine-android:3.0.2")
 }
