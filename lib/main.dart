@@ -4,12 +4,14 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:audioplayers/audioplayers.dart';
 import 'package:kakao_flutter_sdk/kakao_flutter_sdk.dart';
 import 'ImageAnalysisScreen.dart';
 import 'SettingScreen.dart';
 import 'SplashScreen.dart';
 import 'Shake.dart';
+import 'utils/audio_permission_handler.dart' as audio_handler;
+import 'utils/voice_recorder.dart';
+import 'ChatbotOverlayService.dart';
 
 
 void main() async {
@@ -42,7 +44,7 @@ Future<void> _initializeNetwork() async {
       try {
         print('HTTP GET 요청 시도 중... (시도 ${retryCount + 1}/$maxRetries)');
         final response = await http.get(
-          Uri.parse('http://192.168.219.101:8081/api/test'),
+          Uri.parse('http://localhost:8081/api/test'),
           headers: {
             'User-Agent': 'EUM-App/1.0',
             'Connection': 'keep-alive',
@@ -88,10 +90,80 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-              home: ImageAnalysisHandler(
-          child: const SplashScreen(),
+      home: AudioPermissionHandler(
+        child: ImageAnalysisHandler(
+          child: ChatbotHandler(
+            child: SplashScreen(),
+          ),
         ),
+      ),
     );
+  }
+}
+
+class AudioPermissionHandler extends StatefulWidget {
+  final Widget child;
+  
+  const AudioPermissionHandler({Key? key, required this.child}) : super(key: key);
+
+  @override
+  State<AudioPermissionHandler> createState() => _AudioPermissionHandlerState();
+}
+
+class _AudioPermissionHandlerState extends State<AudioPermissionHandler> {
+  static const platform = MethodChannel('voice_recorder');
+  StreamSubscription? _broadcastSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _requestAudioPermission();
+    _setupVoiceRecordingListener();
+    VoiceRecorder.initializeEventListeners();
+  }
+
+  @override
+  void dispose() {
+    _broadcastSubscription?.cancel();
+    VoiceRecorder.dispose();
+    super.dispose();
+  }
+
+  Future<void> _requestAudioPermission() async {
+    // 앱이 완전히 로드된 후 권한 요청
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      bool hasPermission = await audio_handler.AudioPermissionHandler.checkAudioPermission();
+      if (!hasPermission) {
+        audio_handler.AudioPermissionHandler.showPermissionExplanation(context);
+      }
+    });
+  }
+
+  void _setupVoiceRecordingListener() {
+    // Android 브로드캐스트 리스너 설정
+    platform.setMethodCallHandler((call) async {
+      print('음성 녹음 메서드 호출 받음: ${call.method}');
+      
+      if (call.method == 'startVoiceRecording') {
+        print('음성 녹음 시작 요청 받음');
+        final arguments = call.arguments as Map<String, dynamic>?;
+        final durationMs = arguments?['recording_duration_ms'] as int? ?? 10000;
+        
+        print('녹음 시간: ${durationMs}ms');
+        
+        // 챗봇 오버레이 표시 및 음성 녹음 시작
+        ChatbotOverlayService.startVoiceRecording();
+        
+      } else if (call.method == 'stopVoiceRecording') {
+        print('음성 녹음 종료 요청 받음');
+        // 녹음 종료는 자동으로 처리됨
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.child;
   }
 }
 
@@ -107,64 +179,11 @@ class ImageAnalysisHandler extends StatefulWidget {
 class _ImageAnalysisHandlerState extends State<ImageAnalysisHandler> {
   static const platform = MethodChannel('image_analysis_channel');
   Map<String, dynamic>? _lastServerResponse;
-  final AudioPlayer _audioPlayer = AudioPlayer();
 
   @override
   void initState() {
     super.initState();
     _setupMethodChannel();
-    _initializeAudioPlayer();
-  }
-
-  Future<void> _initializeAudioPlayer() async {
-    try {
-      print('main.dart에서 오디오 플레이어 초기화 시작');
-      await _audioPlayer.setReleaseMode(ReleaseMode.stop);
-      await _audioPlayer.setVolume(1.0);
-      print('main.dart에서 오디오 플레이어 초기화 완료');
-    } catch (e) {
-      print('main.dart에서 오디오 플레이어 초기화 실패: $e');
-    }
-  }
-
-  Future<void> _playAudioDirectly(String audioBase64) async {
-    print('=== main.dart에서 직접 음성 재생 시작 ===');
-    
-    if (audioBase64.isEmpty) {
-      print('음성 데이터가 없습니다.');
-      return;
-    }
-
-    try {
-      print('음성 데이터 크기: ${audioBase64.length}');
-      
-      // Base64를 바이트로 디코딩
-      final audioBytes = base64Decode(audioBase64);
-      print('음성 바이트 크기: ${audioBytes.length}');
-
-      // 기존 재생 중인 오디오가 있으면 정지
-      await _audioPlayer.stop();
-      
-      // 볼륨 설정
-      await _audioPlayer.setVolume(1.0);
-      
-      // BytesSource로 직접 재생
-      await _audioPlayer.play(BytesSource(audioBytes));
-      print('main.dart에서 음성 재생 시작 성공');
-      
-      // 재생 완료 이벤트 리스너
-      _audioPlayer.onPlayerComplete.listen((event) {
-        print('main.dart에서 음성 재생 완료');
-      });
-
-      // 재생 상태 변경 이벤트 리스너
-      _audioPlayer.onPlayerStateChanged.listen((state) {
-        print('main.dart에서 오디오 플레이어 상태 변경: $state');
-      });
-      
-    } catch (e) {
-      print('main.dart에서 음성 재생 실패: $e');
-    }
   }
 
   void _setupMethodChannel() {
@@ -224,7 +243,7 @@ class _ImageAnalysisHandlerState extends State<ImageAnalysisHandler> {
         // 서버 응답에서 음성 데이터 추출하여 바로 재생
         if (_lastServerResponse != null && _lastServerResponse!['audioBase64'] != null) {
           print('음성 자동 재생 시작');
-          _playAudioDirectly(_lastServerResponse!['audioBase64']);
+          // _playAudioDirectly(_lastServerResponse!['audioBase64']); // AudioPlayer 제거
         } else {
           print('음성 데이터를 찾을 수 없습니다.');
         }
@@ -305,7 +324,7 @@ class _ImageAnalysisHandlerState extends State<ImageAnalysisHandler> {
         try {
           print('HTTP GET 요청 시도 중... (시도 ${retryCount + 1}/$maxRetries)');
           final testResponse = await http.get(
-            Uri.parse('http://192.168.219.101:8081/api/test'),
+            Uri.parse('http://localhost:8081/api/test'),
             headers: {
               'User-Agent': 'EUM-App/1.0',
               'Connection': 'keep-alive',
@@ -357,7 +376,7 @@ class _ImageAnalysisHandlerState extends State<ImageAnalysisHandler> {
       print('현재 시간: ${DateTime.now()}');
 
       final response = await http.post(
-        Uri.parse('http://192.168.219.101:8081/api/ocr/analyze'),
+        Uri.parse('http://localhost:8081/api/ocr/analyze'),
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': 'EUM-App/1.0',
@@ -428,6 +447,38 @@ class _ImageAnalysisHandlerState extends State<ImageAnalysisHandler> {
         ),
       );
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.child;
+  }
+}
+
+class ChatbotHandler extends StatefulWidget {
+  final Widget child;
+  
+  const ChatbotHandler({Key? key, required this.child}) : super(key: key);
+
+  @override
+  _ChatbotHandlerState createState() => _ChatbotHandlerState();
+}
+
+class _ChatbotHandlerState extends State<ChatbotHandler> {
+  @override
+  void initState() {
+    super.initState();
+    
+    // 위젯이 빌드된 후 챗봇 오버레이 서비스 초기화
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ChatbotOverlayService.initialize(context);
+    });
+  }
+
+  @override
+  void dispose() {
+    ChatbotOverlayService.dispose();
+    super.dispose();
   }
 
   @override
