@@ -33,23 +33,32 @@ Future<void> _initializeNetwork() async {
     print('main.dart에서 네트워크 초기화 시작...');
     
     // 앱 초기화 완료를 위한 대기
-    await Future.delayed(const Duration(milliseconds: 1000));
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    // Android 에ulator에서 localhost 대신 10.0.2.2 사용
+    String serverUrl = 'http://localhost:8081/api/test';
+    if (Platform.isAndroid) {
+      // Android 에ulator에서는 10.0.2.2가 호스트 머신의 localhost
+      serverUrl = 'http://10.0.2.2:8081/api/test';
+    }
+    
+    print('서버 URL: $serverUrl');
     
     // 서버 연결 테스트 (재시도 로직 포함)
     bool isConnected = false;
     int retryCount = 0;
-    const maxRetries = 3;
+    const maxRetries = 2; // 재시도 횟수 줄임
     
     while (retryCount < maxRetries && !isConnected) {
       try {
         print('HTTP GET 요청 시도 중... (시도 ${retryCount + 1}/$maxRetries)');
         final response = await http.get(
-          Uri.parse('http://localhost:8081/api/test'),
+          Uri.parse(serverUrl),
           headers: {
             'User-Agent': 'EUM-App/1.0',
             'Connection': 'keep-alive',
           },
-        ).timeout(const Duration(seconds: 8)); // 타임아웃 증가
+        ).timeout(const Duration(seconds: 5)); // 타임아웃 줄임
         
         if (response.statusCode == 200) {
           print('main.dart에서 네트워크 초기화 성공: ${response.statusCode}');
@@ -64,14 +73,15 @@ Future<void> _initializeNetwork() async {
         print('네트워크 초기화 실패 (시도 $retryCount/$maxRetries): $e');
         
         if (retryCount < maxRetries) {
-          print('${retryCount * 2}초 후 재시도합니다...'); // 점진적으로 대기 시간 증가
-          await Future.delayed(Duration(seconds: retryCount * 2));
+          print('1초 후 재시도합니다...');
+          await Future.delayed(const Duration(seconds: 1));
         }
       }
     }
     
     if (!isConnected) {
       print('main.dart에서 네트워크 초기화 실패 (정상적인 상황)');
+      print('로컬 개발 서버가 실행되지 않았거나 네트워크에 연결할 수 없습니다.');
     }
   } catch (e) {
     print('main.dart에서 네트워크 초기화 중 오류: $e');
@@ -93,7 +103,7 @@ class MyApp extends StatelessWidget {
       home: AudioPermissionHandler(
         child: ImageAnalysisHandler(
           child: ChatbotHandler(
-            child: SplashScreen(),
+            child: RegisterScreen(),
           ),
         ),
       ),
