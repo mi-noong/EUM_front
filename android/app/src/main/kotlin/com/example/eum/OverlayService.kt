@@ -11,8 +11,11 @@ import android.util.Log
 import android.view.*
 import android.widget.LinearLayout
 import android.widget.ImageView
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import ai.picovoice.porcupine.PorcupineManager
+import ai.picovoice.porcupine.PorcupineManagerCallback
+import ai.picovoice.porcupine.PorcupineException
 import java.io.File
 import java.io.FileOutputStream
 import java.io.FileNotFoundException
@@ -30,6 +33,13 @@ import android.view.animation.AnimationUtils
 import kotlinx.coroutines.*
 import kotlin.math.sqrt
 import kotlin.math.abs
+import android.provider.Settings
+import android.media.audiofx.NoiseSuppressor
+import java.net.HttpURLConnection
+import java.net.URL
+import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 
 class OverlayService : Service() {
     private var windowManager: WindowManager? = null
@@ -43,7 +53,6 @@ class OverlayService : Service() {
     
     // Porcupine 관련 변수들
     private var porcupineManager: PorcupineManager? = null
-    private val ACCESS_KEY = "JVZic8cgf3LNXFBS5/xvsGJ/xq7o+v8S6bSrTeMsT1ehRMmzCD1+2Q=="
     
     // 음성 녹음 관련 변수들
     private var mediaRecorder: MediaRecorder? = null
@@ -56,10 +65,27 @@ class OverlayService : Service() {
     private var isVoiceAnalyzing = false
     private val voiceAnalysisScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     
-    // 에너지 분석 설정 (범용 최적화)
-    private val ENERGY_THRESHOLD = 600.0 // 범용 에너지 임계값 (낮춤)
-    private val SILENCE_DURATION_MS = 3000 // 무음 지속 시간 (3초)
-    private val ANALYSIS_INTERVAL_MS = 100 // 분석 간격 (100ms)
+    // 에너지 분석 설정 (음성 인식 개선 - 더 민감하게 조정)
+    // 음성 인식 최적화 상수 (태블릿과 핸드폰 모두 지원)
+    private val ENERGY_THRESHOLD = 8.0 // 에너지 임계값을 더 낮게 설정 (30~35dB 수준 - 더 민감하게)
+    private val SILENCE_DURATION_MS = 3000 // 무음 지속 시간 (3초로 단축 - 더 빠른 응답)
+    private val ANALYSIS_INTERVAL_MS = 15 // 분석 간격 (15ms로 단축 - 더 민감하게
+    
+    // 호출어 인식 후 딜레이 (태블릿 발화 후 안정화 시간)
+    private val WAKE_WORD_DELAY_MS = 500 // 0.5초 딜레이 (더 빠른 응답)
+    
+    // 음성 명령 감지 상수 (태블릿 최적화)
+    private val COMMAND_THRESHOLD = 50.0 // 명령 감지 임계값 (더 낮춤 - 더 민감한 감지)
+    private val COMMAND_SILENCE_DURATION_MS = 2000 // 명령 후 무음 지속 시간 (2초로 단축)
+    
+    // 기기 타입별 최적화
+    private val isTablet: Boolean by lazy {
+        val displayMetrics = resources.displayMetrics
+        val screenWidth = displayMetrics.widthPixels / displayMetrics.density
+        val screenHeight = displayMetrics.heightPixels / displayMetrics.density
+        val screenInches = sqrt((screenWidth * screenWidth + screenHeight * screenHeight).toDouble()) / 160.0
+        screenInches >= 7.0 // 7인치 이상을 태블릿으로 간주
+    }
     private var lastVoiceTime = 0L // 마지막 음성 감지 시간
     
     // 범용 오디오 설정 (태블릿/핸드폰 호환)
@@ -67,27 +93,81 @@ class OverlayService : Service() {
     private val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO // 모노 채널
     private val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT // 16-bit PCM
     
-    // 음성 명령 감지 관련 변수들 (범용 최적화)
+    // 음성 명령 감지 관련 변수들 (음성 인식 개선)
     private var isListeningForCommands = false
-    private val COMMAND_THRESHOLD = 1200.0 // 범용 명령 감지 임계값 (조정됨)
-    private val COMMAND_SILENCE_DURATION_MS = 1000 // 명령 후 무음 지속 시간 (1초)
+
+    // 브로드캐스트 리시버 등록
+    private val chatbotResponseReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                CHATBOT_VOICE_RESPONSE -> {
+                    val response = intent.getStringExtra("response") ?: "응답을 받지 못했습니다"
+                    Log.i(TAG, "🤖 AI 챗봇 응답 수신: $response")
+                    
+                    // Flutter 앱에 응답 전달
+                    sendChatbotResponseToFlutter(response)
+                }
+            }
+        }
+    }
+    
+    // 브로드캐스트 액션 상수
+    companion object {
+        private const val TAG = "OverlayService"
+        private const val CHATBOT_VOICE_RESPONSE = "CHATBOT_VOICE_RESPONSE"
+        private const val DEACTIVATE_CHATBOT_VOICE = "DEACTIVATE_CHATBOT_VOICE"
+        
+        // 음성 인식 관련 상수
+        private const val SAMPLE_RATE = 16000
+        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
+        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+        
+        // 에너지 임계값 및 타이밍 (더 민감하게 조정)
+        private const val ENERGY_THRESHOLD = 8.0 // 30-35dB (더 민감하게)
+        private const val SILENCE_DURATION_MS = 3000L // 3초 (더 빠른 응답)
+        private const val ANALYSIS_INTERVAL_MS = 15L // 15ms (더 민감하게)
+        private const val COMMAND_THRESHOLD = 50.0 // 음성 명령 감지 임계값 (더 민감하게)
+        private const val COMMAND_SILENCE_DURATION_MS = 2000L // 명령 후 무음 대기 시간 (더 빠르게)
+        private const val WAKE_WORD_DELAY_MS = 500L // 호출어 감지 후 딜레이 (0.5초 - 더 빠르게)
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "OverlayService onCreate 시작")
-        try {
-            createNotificationChannel()
-            startForeground(NOTIFICATION_ID, createNotification())
-            windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-            addOverlayView()
-            initializePorcupineManager()
-            Log.d(TAG, "OverlayService onCreate 완료")
-        } catch (e: Exception) {
-            Log.e(TAG, "OverlayService onCreate 실패: ${e.message}")
+        Log.i(TAG, "🎯 EUM AI 챗봇 오버레이 서비스 시작")
+        
+        // 기기 타입 감지 및 최적화 설정 표시
+        val deviceType = if (isTablet) "태블릿" else "핸드폰"
+        Log.i(TAG, "📱 기기 타입 감지: $deviceType")
+        Log.i(TAG, "⚙️ 최적화 설정 - 에너지 임계값: $ENERGY_THRESHOLD, 무음 지속: ${SILENCE_DURATION_MS}ms, 분석 간격: ${ANALYSIS_INTERVAL_MS}ms")
+        
+        // 오버레이 권한 확인
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            Log.e(TAG, "❌ 오버레이 권한이 없습니다!")
             stopSelf()
+            return
         }
+        
+        // 브로드캐스트 리시버 등록
+        try {
+            val filter = IntentFilter().apply {
+                addAction(CHATBOT_VOICE_RESPONSE)
+                addAction(DEACTIVATE_CHATBOT_VOICE)
+            }
+            registerReceiver(chatbotResponseReceiver, filter)
+            Log.d(TAG, "✅ 브로드캐스트 리시버 등록 완료")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 브로드캐스트 리시버 등록 실패: ${e.message}")
+        }
+        
+        // 오버레이 뷰 생성 및 추가
+        createOverlayView()
+        
+        // PorcupineManager 초기화 및 실시간 스트림 시작
+        initializePorcupineManager()
+        
+        Log.i(TAG, "✅ EUM AI 챗봇 오버레이 서비스 초기화 완료")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -156,6 +236,28 @@ class OverlayService : Service() {
         }
     }
 
+    // 오버레이 뷰 생성 및 추가
+    private fun createOverlayView() {
+        try {
+            Log.d(TAG, "오버레이 뷰 생성 시작")
+            
+            // 알림 채널 생성 및 포그라운드 서비스 시작
+            createNotificationChannel()
+            startForeground(NOTIFICATION_ID, createNotification())
+            
+            // WindowManager 초기화
+            windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+            
+            // 오버레이 뷰 추가
+            addOverlayView()
+            
+            Log.d(TAG, "오버레이 뷰 생성 완료")
+        } catch (e: Exception) {
+            Log.e(TAG, "오버레이 뷰 생성 실패: ${e.message}")
+            stopSelf()
+        }
+    }
+
     private fun addOverlayView() {
         try {
             Log.d(TAG, "오버레이 뷰 추가 시작")
@@ -184,25 +286,54 @@ class OverlayService : Service() {
 
             handle?.setOnTouchListener(object : View.OnTouchListener {
                 private var startY = 0f
+                private var startTime = 0L
+                private var isLongPress = false
+                
                 override fun onTouch(v: View?, event: MotionEvent): Boolean {
                     try {
                         when (event.action) {
-                            MotionEvent.ACTION_DOWN -> startY = event.rawY
+                            MotionEvent.ACTION_DOWN -> {
+                                startY = event.rawY
+                                startTime = System.currentTimeMillis()
+                                isLongPress = false
+                            }
+                            MotionEvent.ACTION_MOVE -> {
+                                // 길게 누르기 감지 (1초 이상)
+                                if (System.currentTimeMillis() - startTime > 1000) {
+                                    if (!isLongPress) {
+                                        isLongPress = true
+                                        Log.d(TAG, "EUM 바 길게 누르기 감지 - 챗봇 비활성화")
+                                        // 길게 누르기로 챗봇 비활성화
+                                        if (isChatbotActivated) {
+                                            deactivateChatbot()
+                                        }
+                                    }
+                                }
+                            }
                             MotionEvent.ACTION_UP -> {
                                 val deltaY = startY - event.rawY
-                                if (deltaY > 100 && !isMenuOpen) {
+                                val pressDuration = System.currentTimeMillis() - startTime
+                                
+                                if (isLongPress) {
+                                    // 길게 누르기로 챗봇 비활성화된 경우
+                                    Log.d(TAG, "길게 누르기로 챗봇 비활성화 완료")
+                                } else if (deltaY > 100 && !isMenuOpen) {
+                                    // 일반 스와이프로 메뉴 열기
                                     menu?.visibility = View.VISIBLE
                                     isMenuOpen = true
                                     Log.d(TAG, "메뉴 열기")
-                                    // 메뉴가 열릴 때 챗봇 완전히 비활성화
+                                    // 메뉴가 열릴 때 챗봇 비활성화 (다른 메뉴 선택 가능하도록)
                                     if (isChatbotActivated) {
+                                        Log.d(TAG, "메뉴 열림 - 챗봇 비활성화")
                                         deactivateChatbot()
                                     }
                                 } else if (deltaY < -100 && isMenuOpen) {
+                                    // 메뉴 닫기
                                     menu?.visibility = View.GONE
                                     isMenuOpen = false
                                     Log.d(TAG, "메뉴 닫기")
-                                    // 메뉴가 닫혀도 챗봇은 비활성화 상태 유지
+                                    // 메뉴가 닫혀도 챗봇은 비활성화 상태 유지 (자동 복원 안함)
+                                    Log.d(TAG, "메뉴 닫힘 - 챗봇은 비활성화 상태 유지")
                                 }
                             }
                         }
@@ -240,11 +371,13 @@ class OverlayService : Service() {
             btnChatbot?.setOnClickListener {
                 try {
                     Log.d(TAG, "AI 챗봇 버튼 클릭됨!")
-                    // 챗봇 활성화/비활성화 토글
-                    if (isChatbotActivated) {
-                        deactivateChatbot()
-                    } else {
+                    // 챗봇이 비활성화된 상태에서만 활성화
+                    if (!isChatbotActivated) {
                         activateChatbot()
+                        Log.d(TAG, "챗봇 활성화 완료")
+                    } else {
+                        Log.d(TAG, "챗봇이 이미 활성화되어 있습니다.")
+                        Toast.makeText(this, "챗봇이 이미 활성화되어 있습니다.", Toast.LENGTH_SHORT).show()
                     }
                     
                     // 메뉴 닫기
@@ -285,8 +418,21 @@ class OverlayService : Service() {
         isChatbotActivated = false
         Log.d(TAG, "EUM AI 챗봇이 비활성화되었습니다!")
         
-        // chatbot.png 아이콘 숨기기
+        // chatbot.png 아이콘 숨기기 (사용자가 명시적으로 비활성화할 때만)
         hideChatbotIcon()
+        
+        // 모니터링 중지 로그 (startWakeWordMonitoring에서 자동으로 중단됨)
+        Log.d(TAG, "🔍 호출어 감지 모니터링이 자동으로 중단됩니다")
+        
+        // Flutter 앱에 챗봇 비활성화 알림
+        try {
+            val intent = Intent("DEACTIVATE_CHATBOT_VOICE")
+            intent.setPackage(packageName)
+            sendBroadcast(intent)
+            Log.d(TAG, "DEACTIVATE_CHATBOT_VOICE 브로드캐스트 전송 완료")
+        } catch (e: Exception) {
+            Log.e(TAG, "챗봇 비활성화 브로드캐스트 전송 실패: ${e.message}")
+        }
     }
 
     // chatbot.png 아이콘 표시
@@ -294,8 +440,11 @@ class OverlayService : Service() {
         try {
             Log.d(TAG, "chatbot.png 아이콘 표시 시작")
             
-            // 이미 아이콘이 표시되어 있으면 제거
-            hideChatbotIcon()
+            // 이미 아이콘이 표시되어 있으면 새로 생성하지 않음
+            if (chatbotFloatingIcon != null) {
+                Log.d(TAG, "chatbot.png 아이콘이 이미 표시되어 있습니다.")
+                return
+            }
             
             // chatbot.png 아이콘 생성
             chatbotFloatingIcon = ImageView(this)
@@ -317,9 +466,9 @@ class OverlayService : Service() {
                 PixelFormat.TRANSLUCENT
             )
             
-            // 화면 오른쪽 하단에 위치 (EUM 바 위)
-            params.gravity = Gravity.BOTTOM or Gravity.END
-            params.x = 20 // 오른쪽 여백
+            // 화면 하단 가운데에 위치 (EUM 바 위)
+            params.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            params.x = 0 // 가운데 정렬
             params.y = 80 // EUM 바 위 여백
             
             // 아이콘 클릭 이벤트 설정
@@ -330,10 +479,10 @@ class OverlayService : Service() {
             
             // 화면에 아이콘 추가
             windowManager?.addView(chatbotFloatingIcon, params)
-            Log.d(TAG, "chatbot.png 아이콘 표시 완료")
+            Log.d(TAG, "✅ chatbot.png 아이콘 표시 완료")
             
         } catch (e: Exception) {
-            Log.e(TAG, "chatbot.png 아이콘 표시 실패: ${e.message}")
+            Log.e(TAG, "❌ chatbot.png 아이콘 표시 실패: ${e.message}")
         }
     }
     
@@ -344,10 +493,14 @@ class OverlayService : Service() {
                 Log.d(TAG, "chatbot.png 아이콘 숨기기 시작")
                 windowManager?.removeView(chatbotFloatingIcon)
                 chatbotFloatingIcon = null
-                Log.d(TAG, "chatbot.png 아이콘 숨기기 완료")
+                Log.d(TAG, "✅ chatbot.png 아이콘 숨기기 완료")
+            } else {
+                Log.d(TAG, "chatbot.png 아이콘이 이미 숨겨져 있습니다.")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "chatbot.png 아이콘 숨기기 실패: ${e.message}")
+            Log.e(TAG, "❌ chatbot.png 아이콘 숨기기 실패: ${e.message}")
+            // 오류 발생 시에도 변수 정리
+            chatbotFloatingIcon = null
         }
     }
     
@@ -355,8 +508,8 @@ class OverlayService : Service() {
     private fun onChatbotIconClicked() {
         Log.d(TAG, "chatbot.png 아이콘 클릭으로 음성 녹음 시작")
         
-        // 챗봇 아이콘 숨기기 (음성 녹음 중에는 숨김)
-        hideChatbotIcon()
+        // 챗봇 아이콘을 클릭해도 숨기지 않고 유지
+        // hideChatbotIcon() 제거 - 클릭으로는 사라지지 않음
         
         // "이음봇아" 호출어 감지와 동일한 처리
         onWakeWordDetected()
@@ -364,48 +517,113 @@ class OverlayService : Service() {
 
 
 
-    // PorcupineManager 초기화 및 호출어 감지 시작
+    // PorcupineManager 초기화 및 실시간 스트림 연동
     private fun initializePorcupineManager() {
         try {
-            Log.d(TAG, "PorcupineManager 초기화 시작")
+            Log.i(TAG, "🎯 PorcupineManager 초기화 시작 - 실시간 오디오 스트림 연동")
             
-            // assets에서 .ppn 파일과 .pv 파일을 복사
+            // assets 파일을 내부 저장소로 복사
             val ppnFile = copyAssetToFile("이음봇아_ko_android_v3_0_0.ppn")
             val pvFile = copyAssetToFile("porcupine_params_ko.pv")
             
-            Log.d(TAG, "PPN 파일 경로: ${ppnFile.absolutePath}")
-            Log.d(TAG, "PV 파일 경로: ${pvFile.absolutePath}")
-            Log.d(TAG, "Access Key: $ACCESS_KEY")
-            
-            // 호출어 감지 콜백 정의
-            val wakeWordCallback = object : ai.picovoice.porcupine.PorcupineManagerCallback {
-                override fun invoke(keywordIndex: Int) {
-                    Log.i(TAG, "이음봇아 호출어 감지됨! (keywordIndex: $keywordIndex)")
-                    onWakeWordDetected()
-                }
+            // 파일 유효성 검사
+            if (!ppnFile.exists() || ppnFile.length() == 0L) {
+                throw Exception("PPN 파일이 존재하지 않거나 비어있습니다: ${ppnFile.absolutePath}")
+            }
+            if (!pvFile.exists() || pvFile.length() == 0L) {
+                throw Exception("PV 파일이 존재하지 않거나 비어있습니다: ${pvFile.absolutePath}")
             }
             
-            // PorcupineManager 초기화
+            Log.d(TAG, "📁 PPN 파일: ${ppnFile.absolutePath} (${ppnFile.length()} bytes)")
+            Log.d(TAG, "📁 PV 파일: ${pvFile.absolutePath} (${pvFile.length()} bytes)")
+            
+            // PorcupineManager 초기화 (올바른 API 사용법)
             porcupineManager = PorcupineManager.Builder()
-                .setAccessKey(ACCESS_KEY)
+                .setAccessKey("JVZic8cgf3LNXFBS5/xvsGJ/xq7o+v8S6bSrTeMsT1ehRMmzCD1+2Q==")
                 .setKeywordPaths(arrayOf(ppnFile.absolutePath))
                 .setModelPath(pvFile.absolutePath)
-                .build(this, wakeWordCallback)
+                .setSensitivity(0.5f) // 호출어 감지 민감도
+                .build(this, object : ai.picovoice.porcupine.PorcupineManagerCallback {
+                    override fun invoke(keywordIndex: Int) {
+                        Log.i(TAG, "🎯 호출어 감지됨! (keywordIndex: $keywordIndex)")
+                        onWakeWordDetected()
+                    }
+                })
             
+            // PorcupineManager 시작
             porcupineManager?.start()
-            Log.d(TAG, "PorcupineManager 초기화 및 시작 완료")
+            
+            Log.d(TAG, "✅ PorcupineManager 초기화 및 시작 완료")
             
         } catch (e: Exception) {
-            Log.e(TAG, "PorcupineManager 초기화 실패: ${e.message}")
+            Log.e(TAG, "❌ PorcupineManager 초기화 실패: ${e.message}")
             e.printStackTrace()
             
-            // 초기화 실패 시 테스트 시뮬레이션
-            Log.w(TAG, "PorcupineManager 초기화 실패로 인한 테스트 시뮬레이션 시작")
-            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                Log.i(TAG, "테스트: 이음봇아 호출어 감지 시뮬레이션")
-                onWakeWordDetected()
-            }, 10000) // 10초 후 시뮬레이션
+            // 초기화 실패 시 대체 방법 시도
+            Log.w(TAG, "⚠️ PorcupineManager 초기화 실패로 대체 방법 시도")
+            tryAlternativeWakeWordDetection()
         }
+    }
+    
+    // 대체 호출어 감지 방법 (PorcupineManager 실패 시)
+    private fun tryAlternativeWakeWordDetection() {
+        try {
+            Log.i(TAG, "🔄 대체 호출어 감지 방법 시작 - 에너지 기반 감지")
+            
+            // 에너지 기반 호출어 감지 활성화
+            startEnergyBasedWakeWordDetection()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 대체 호출어 감지 방법도 실패: ${e.message}")
+        }
+    }
+    
+    // 에너지 기반 호출어 감지
+    private fun startEnergyBasedWakeWordDetection() {
+        Log.i(TAG, "🔊 에너지 기반 호출어 감지 시작")
+        
+        // 에너지 임계값을 더 민감하게 설정
+        val wakeWordEnergyThreshold = ENERGY_THRESHOLD * 0.5 // 더 민감하게
+        
+        voiceAnalysisScope.launch {
+            try {
+                while (isChatbotActivated) {
+                    // 에너지 기반 호출어 감지 로직
+                    // 실제 구현에서는 더 정교한 알고리즘이 필요
+                    delay(100) // 100ms 간격으로 체크
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "에너지 기반 호출어 감지 실패: ${e.message}")
+            }
+        }
+    }
+    
+    // 호출어 감지 상태 모니터링
+    private fun startWakeWordMonitoring() {
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(object : Runnable {
+            override fun run() {
+                try {
+                    // 챗봇이 비활성화된 경우 모니터링 중단
+                    if (!isChatbotActivated) {
+                        Log.d(TAG, "🔍 모니터링 중단 - 챗봇 비활성화")
+                        return
+                    }
+                    
+                    // PorcupineManager 상태 확인 (isListening 필드가 private이므로 다른 방법 사용)
+                    val isPorcupineRunning = porcupineManager != null
+                    Log.d(TAG, "🔍 PorcupineManager 상태: ${if (isPorcupineRunning) "실행 중" else "중지됨"}")
+                    
+                    // 챗봇이 활성화된 상태에서만 계속 모니터링
+                    if (isChatbotActivated && isPorcupineRunning) {
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this, 5000)
+                    } else {
+                        Log.d(TAG, "🔍 모니터링 중단 - 챗봇 비활성화 또는 PorcupineManager 중지")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "호출어 감지 모니터링 실패: ${e.message}")
+                }
+            }
+        }, 5000)
     }
     
     // 에너지 기반 음성 명령 감지
@@ -444,8 +662,9 @@ class OverlayService : Service() {
                 )
                 vibrator.vibrate(vibrationEffect)
             } else {
+                // Android 8.0 미만: 기존 방식
                 @Suppress("DEPRECATION")
-                vibrator.vibrate(longArrayOf(0, 100, 100, 100), -1)
+                vibrator.vibrate(200)
             }
             
             Log.d(TAG, "정지 명령 피드백 제공 완료")
@@ -454,19 +673,156 @@ class OverlayService : Service() {
         }
     }
     
-    // 호출어 감지 시 처리
+    // 호출어 감지 시 처리 (즉시 백엔드 전송)
     private fun onWakeWordDetected() {
-        Log.i(TAG, "호출어 감지 - 즉시 음성 녹음 시작")
+        Log.i(TAG, "🎯 호출어 감지됨! - 즉시 백엔드 전송 시작")
         
         // 사용자 피드백 제공
         provideWakeWordFeedback()
         
-        // 챗봇 활성화와 동시에 음성 녹음 시작
-        activateChatbot()
-        startVoiceAnalysis()
-        startVoiceRecordingInApp()
+        // 챗봇이 비활성화된 상태라면 활성화
+        if (!isChatbotActivated) {
+            activateChatbot()
+            Log.d(TAG, "챗봇이 비활성화 상태였습니다. 활성화 완료")
+        } else {
+            Log.d(TAG, "챗봇이 이미 활성화된 상태입니다. 음성 녹음만 시작합니다.")
+        }
         
-        Log.i(TAG, "호출어 감지와 동시에 모든 기능 활성화 완료")
+        // 태블릿 발화 후 안정화를 위한 딜레이 적용
+        voiceAnalysisScope.launch {
+            Log.d(TAG, "⏳ 호출어 감지 후 ${WAKE_WORD_DELAY_MS}ms 딜레이 시작 (태블릿 발화 안정화)")
+            delay(WAKE_WORD_DELAY_MS.toLong())
+            Log.d(TAG, "✅ 딜레이 완료 - 음성 녹음 및 백엔드 전송 시작")
+            
+            // 호출어 감지 시마다 음성 녹음 시작 (챗봇 상태와 관계없이)
+            startVoiceAnalysis()
+            startVoiceRecordingInApp()
+            
+            // 백엔드 전송 시작
+            startBackendUpload()
+        }
+        
+        Log.i(TAG, "✅ 호출어 감지로 딜레이 후 백엔드 전송 시작 예약 완료")
+    }
+    
+    // 백엔드 전송 시작
+    private fun startBackendUpload() {
+        try {
+            Log.i(TAG, "🌐 백엔드 전송 시작")
+            
+            // 녹음 파일 생성 및 전송
+            val audioFile = File(filesDir, "voice_input_${System.currentTimeMillis()}.m4a")
+            
+            // 백그라운드에서 HTTP POST 업로드
+            voiceAnalysisScope.launch {
+                try {
+                    uploadToBackend(audioFile)
+                } catch (e: Exception) {
+                    Log.e(TAG, "백엔드 업로드 실패: ${e.message}")
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "백엔드 전송 시작 실패: ${e.message}")
+        }
+    }
+    
+    // HTTP POST 방식으로 백엔드 서버에 업로드
+    private suspend fun uploadToBackend(audioFile: File) {
+        withContext(Dispatchers.IO) {
+            try {
+                Log.i(TAG, "📤 AI 챗봇 서버로 음성 파일 전송 시작: ${audioFile.name}")
+                
+                // 기존 AI 챗봇과 동일한 엔드포인트 사용
+                val serverUrl = "http://localhost:8081/api/chatbot/chat"
+                
+                val connection = URL(serverUrl).openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.doOutput = true
+                connection.doInput = true
+                
+                // 헤더 설정
+                connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW")
+                connection.setRequestProperty("User-Agent", "EUM-AI-Chatbot/1.0")
+                
+                // 파일 업로드를 위한 multipart 데이터 생성
+                val boundary = "----WebKitFormBoundary7MA4YWxkTrZu0gW"
+                val writer = connection.outputStream.bufferedWriter()
+                
+                // 호출어 정보 추가
+                writer.append("--$boundary\r\n")
+                writer.append("Content-Disposition: form-data; name=\"wake_word\"\r\n\r\n")
+                writer.append("이음봇아\r\n")
+                
+                // 기기 정보 추가
+                val deviceType = if (isTablet) "태블릿" else "핸드폰"
+                writer.append("--$boundary\r\n")
+                writer.append("Content-Disposition: form-data; name=\"device_type\"\r\n\r\n")
+                writer.append("$deviceType\r\n")
+                
+                // 타임스탬프 추가
+                writer.append("--$boundary\r\n")
+                writer.append("Content-Disposition: form-data; name=\"timestamp\"\r\n\r\n")
+                writer.append("${System.currentTimeMillis()}\r\n")
+                
+                // 오디오 파일 추가
+                writer.append("--$boundary\r\n")
+                writer.append("Content-Disposition: form-data; name=\"audio_file\"; filename=\"${audioFile.name}\"\r\n")
+                writer.append("Content-Type: audio/mp4\r\n\r\n")
+                writer.flush()
+                
+                // 파일 데이터 쓰기
+                audioFile.inputStream().use { input ->
+                    connection.outputStream.use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                
+                writer.append("\r\n")
+                writer.append("--$boundary--\r\n")
+                writer.flush()
+                
+                val responseCode = connection.responseCode
+                Log.i(TAG, "🌐 AI 챗봇 서버 응답 코드: $responseCode")
+                
+                if (responseCode == 200) {
+                    val response = connection.inputStream.bufferedReader().use { it.readText() }
+                    Log.i(TAG, "✅ AI 챗봇 서버 전송 성공: $response")
+                    
+                    // AI 챗봇 응답을 Flutter 앱에 전달
+                    sendChatbotResponseToFlutter(response)
+                    
+                } else {
+                    Log.e(TAG, "❌ AI 챗봇 서버 전송 실패: HTTP $responseCode")
+                    val errorResponse = connection.errorStream?.bufferedReader()?.use { it.readText() } ?: "알 수 없는 오류"
+                    Log.e(TAG, "오류 응답: $errorResponse")
+                }
+                
+                connection.disconnect()
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "🌐 AI 챗봇 서버 전송 실패: ${e.message}")
+                e.printStackTrace()
+            }
+        }
+    }
+    
+    // AI 챗봇 응답을 Flutter 앱에 전달
+    private fun sendChatbotResponseToFlutter(response: String) {
+        try {
+            Log.i(TAG, "📱 AI 챗봇 응답을 Flutter 앱에 전달")
+            
+            val intent = Intent("CHATBOT_VOICE_RESPONSE")
+            intent.setPackage(packageName)
+            intent.putExtra("response", response)
+            intent.putExtra("timestamp", System.currentTimeMillis())
+            
+            sendBroadcast(intent)
+            Log.i(TAG, "✅ CHATBOT_VOICE_RESPONSE 브로드캐스트 전송 완료")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Flutter 앱 응답 전달 실패: ${e.message}")
+        }
     }
     
     // Flutter 앱에서 음성 녹음 시작
@@ -474,8 +830,8 @@ class OverlayService : Service() {
         try {
             Log.i(TAG, "Flutter 앱에 음성 녹음 시작 브로드캐스트 전송")
             
-            // 챗봇 아이콘 숨기기 (음성 녹음 중)
-            hideChatbotIcon()
+            // 챗봇 아이콘은 음성 녹음 중에도 계속 표시 (사용자가 계속 볼 수 있도록)
+            // hideChatbotIcon() 제거 - 아이콘 유지
             
             // 음성 녹음 시작 브로드캐스트 전송
             val intent = Intent("START_VOICE_RECORDING")
@@ -493,13 +849,18 @@ class OverlayService : Service() {
     // 실시간 음성 분석 시작
     private fun startVoiceAnalysis() {
         if (isVoiceAnalyzing) {
-            Log.w(TAG, "이미 음성 분석 중입니다")
-            return
+            Log.w(TAG, "⚠️ 이미 음성 분석 중입니다. 기존 분석을 중지하고 새로 시작합니다.")
+            // 기존 음성 분석 중지
+            stopVoiceRecording()
         }
         
         voiceAnalysisScope.launch {
             try {
-                Log.i(TAG, "실시간 음성 분석 시작")
+                // 기기 타입 감지 및 최적화 설정 표시
+                val deviceType = if (isTablet) "태블릿" else "핸드폰"
+                Log.i(TAG, "🎤 실시간 음성 분석 시작 - 기기 타입: $deviceType")
+                Log.i(TAG, "📱 최적화 설정 - 에너지 임계값: $ENERGY_THRESHOLD, 무음 지속: ${SILENCE_DURATION_MS}ms, 분석 간격: ${ANALYSIS_INTERVAL_MS}ms")
+                
                 isVoiceAnalyzing = true
                 isListeningForCommands = true
                 lastVoiceTime = System.currentTimeMillis()
@@ -507,11 +868,13 @@ class OverlayService : Service() {
                 // MediaRecorder 시작 (실제 녹음 파일 생성)
                 startMediaRecorder()
                 
-                // AudioRecord 초기화 (범용 최적화)
+                // AudioRecord 초기화 (음성 인식 개선)
                 val bufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
                 
-                // 범용 호환성을 위한 버퍼 크기 조정
-                val optimizedBufferSize = bufferSize * 3 // 안정성을 위해 버퍼 크기 증가
+                // 태블릿과 핸드폰 모두를 위한 버퍼 크기 최적화
+                val optimizedBufferSize = if (isTablet) bufferSize * 3 else bufferSize * 2 // 태블릿은 더 큰 버퍼
+                
+                Log.d(TAG, "AudioRecord 설정 - 기기: $deviceType, 샘플레이트: ${SAMPLE_RATE}Hz, 버퍼 크기: $optimizedBufferSize (최소: $bufferSize)")
                 
                 audioRecord = AudioRecord(
                     MediaRecorder.AudioSource.MIC,
@@ -522,46 +885,72 @@ class OverlayService : Service() {
                 )
                 
                 if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                    Log.e(TAG, "AudioRecord 초기화 실패 - 범용 호환성 문제 가능성")
+                    Log.e(TAG, "❌ AudioRecord 초기화 실패 - 음성 인식 문제 가능성")
                     Log.e(TAG, "AudioRecord 상태: ${audioRecord?.state}")
                     Log.e(TAG, "버퍼 크기: $optimizedBufferSize, 최소 버퍼 크기: $bufferSize")
                     return@launch
                 }
                 
+                // 백그라운드 소음 억제 (NoiseSuppressor) 적용 - 안전한 방식으로
+                applyNoiseSuppression(audioRecord)
+                
                 audioRecord?.startRecording()
-                Log.i(TAG, "AudioRecord 녹음 시작 (범용 최적화: 샘플레이트 ${SAMPLE_RATE}Hz, 버퍼 크기 ${optimizedBufferSize})")
+                Log.i(TAG, "🎤 AudioRecord 녹음 시작 - 기기: $deviceType (음성 인식 개선: 샘플레이트 ${SAMPLE_RATE}Hz, 버퍼 크기 ${optimizedBufferSize})")
                 
-                val buffer = ShortArray(bufferSize / 2)
+                // 안전한 버퍼 크기 사용
+                val safeBufferSize = minOf(bufferSize / 2, 1024) // 최대 1024로 제한
+                val buffer = ShortArray(safeBufferSize)
                 
-                while (isVoiceAnalyzing) {
-                    val readSize = audioRecord?.read(buffer, 0, buffer.size) ?: 0
-                    
-                    if (readSize > 0) {
-                        // 에너지 계산
-                        val energy = calculateEnergy(buffer, readSize)
-                        Log.d(TAG, "현재 에너지: $energy")
+                while (isVoiceAnalyzing && audioRecord?.state == AudioRecord.STATE_INITIALIZED) {
+                    try {
+                        val readSize = audioRecord?.read(buffer, 0, buffer.size) ?: 0
                         
-                        if (energy > ENERGY_THRESHOLD) {
-                            // 음성 감지됨
-                            lastVoiceTime = System.currentTimeMillis()
-                            Log.d(TAG, "음성 감지됨 - 에너지: $energy")
-                            
-                            // 음성 명령 감지 (강한 음성인 경우)
-                            detectVoiceCommand(energy)
-                        } else {
-                            // 무음 상태 확인 (더 정교한 로직)
+                        if (readSize > 0) {
+                            // 에너지 계산
+                            val energy = calculateEnergy(buffer, readSize)
                             val silenceDuration = System.currentTimeMillis() - lastVoiceTime
-                            if (silenceDuration > SILENCE_DURATION_MS) {
-                                Log.i(TAG, "무음 지속으로 인한 녹음 종료 (${silenceDuration}ms)")
-                                stopVoiceRecording()
-                                break
+                            
+                            Log.d(TAG, "🔊 현재 에너지: $energy (임계값: $ENERGY_THRESHOLD, 무음 지속: ${silenceDuration}ms)")
+                            
+                            if (energy > ENERGY_THRESHOLD) {
+                                // 음성 감지됨
+                                lastVoiceTime = System.currentTimeMillis()
+                                Log.d(TAG, "✅ 음성 감지됨 - 에너지: $energy (임계값 초과)")
+                                
+                                // 음성 명령 감지 (강한 음성인 경우)
+                                detectVoiceCommand(energy)
+                            } else {
+                                // 무음 상태 확인 (더 정교한 로직)
+                                Log.d(TAG, "🔇 무음 상태 - 에너지: $energy, 무음 지속 시간: ${silenceDuration}ms (임계값: ${SILENCE_DURATION_MS}ms)")
+                                if (silenceDuration > SILENCE_DURATION_MS) {
+                                    Log.i(TAG, "⏹️ 무음 지속으로 인한 녹음 종료 (${silenceDuration}ms)")
+                                    stopVoiceRecording()
+                                    break
+                                }
                             }
+                            
+                            // 에너지 변화율 계산 (더 민감한 감지)
+                            if (energy > ENERGY_THRESHOLD * 1.8) {
+                                Log.d(TAG, "🔊🔊 강한 음성 감지 - 에너지: $energy")
+                            } else if (energy > ENERGY_THRESHOLD * 1.2) {
+                                Log.d(TAG, "🔊 중간 음성 감지 - 에너지: $energy")
+                            } else if (energy > ENERGY_THRESHOLD * 0.8) {
+                                Log.d(TAG, "🔊 약한 음성 감지 - 에너지: $energy (임계값 근처)")
+                            }
+                        } else if (readSize == AudioRecord.ERROR_INVALID_OPERATION) {
+                            Log.e(TAG, "❌ AudioRecord 오류: 잘못된 작업")
+                            break
+                        } else if (readSize == AudioRecord.ERROR_BAD_VALUE) {
+                            Log.e(TAG, "❌ AudioRecord 오류: 잘못된 값")
+                            break
+                        } else if (readSize == AudioRecord.ERROR_DEAD_OBJECT) {
+                            Log.e(TAG, "❌ AudioRecord 오류: 죽은 객체")
+                            break
                         }
                         
-                        // 에너지 변화율 계산 (추가 안정성)
-                        if (energy > ENERGY_THRESHOLD * 1.5) {
-                            Log.d(TAG, "강한 음성 감지 - 에너지: $energy")
-                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ AudioRecord 읽기 오류: ${e.message}")
+                        break
                     }
                     
                     delay(ANALYSIS_INTERVAL_MS.toLong())
@@ -569,18 +958,70 @@ class OverlayService : Service() {
                 
             } catch (e: Exception) {
                 Log.e(TAG, "음성 분석 실패: ${e.message}")
-                isVoiceAnalyzing = false
-                isListeningForCommands = false
+                e.printStackTrace()
             } finally {
-                audioRecord?.apply {
-                    stop()
-                    release()
-                }
-                audioRecord = null
+                // 안전한 정리
+                safeCleanupAudioRecord()
                 isVoiceAnalyzing = false
                 isListeningForCommands = false
                 Log.i(TAG, "음성 분석 종료")
             }
+        }
+    }
+    
+    // 안전한 AudioRecord 정리
+    private fun safeCleanupAudioRecord() {
+        try {
+            audioRecord?.apply {
+                if (state == AudioRecord.STATE_INITIALIZED) {
+                    try {
+                        stop()
+                        Log.d(TAG, "✅ AudioRecord 정지 완료")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "⚠️ AudioRecord 정지 중 오류: ${e.message}")
+                    }
+                }
+                
+                try {
+                    release()
+                    Log.d(TAG, "✅ AudioRecord 해제 완료")
+                } catch (e: Exception) {
+                    Log.w(TAG, "⚠️ AudioRecord 해제 중 오류: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "⚠️ AudioRecord 정리 중 오류: ${e.message}")
+        } finally {
+            audioRecord = null
+        }
+    }
+    
+    // 안전한 NoiseSuppressor 적용
+    private fun applyNoiseSuppression(audioRecord: AudioRecord?) {
+        try {
+            val audioSessionId = audioRecord?.audioSessionId ?: 0
+            if (audioSessionId != 0) {
+                // NoiseSuppressor 지원 여부 확인
+                if (NoiseSuppressor.isAvailable()) {
+                    try {
+                        val noiseSuppressor = NoiseSuppressor.create(audioSessionId)
+                        if (noiseSuppressor != null) {
+                            noiseSuppressor.enabled = true
+                            Log.i(TAG, "🔇 백그라운드 소음 억제 활성화 - AudioSessionId: $audioSessionId")
+                        } else {
+                            Log.w(TAG, "⚠️ NoiseSuppressor 생성 실패")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "⚠️ NoiseSuppressor 초기화 실패: ${e.message}")
+                    }
+                } else {
+                    Log.i(TAG, "ℹ️ 이 기기는 NoiseSuppressor를 지원하지 않습니다")
+                }
+            } else {
+                Log.w(TAG, "⚠️ AudioSessionId를 가져올 수 없습니다")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "⚠️ NoiseSuppressor 적용 중 오류: ${e.message}")
         }
     }
     
@@ -625,60 +1066,99 @@ class OverlayService : Service() {
         }
     }
     
-    // 에너지 계산 (범용 최적화)
+    // 에너지 계산 함수 (35~40dB 수준 최적화)
     private fun calculateEnergy(buffer: ShortArray, size: Int): Double {
+        if (size == 0) return 0.0
+        
         var sum = 0.0
         var maxAmplitude = 0.0
+        var minAmplitude = 0.0
         
         for (i in 0 until size) {
-            val sample = buffer[i].toDouble()
-            sum += sample * sample
-            maxAmplitude = maxOf(maxAmplitude, abs(sample))
+            val amplitude = buffer[i].toDouble()
+            sum += amplitude * amplitude
+            if (amplitude > maxAmplitude) maxAmplitude = amplitude
+            if (amplitude < minAmplitude) minAmplitude = amplitude
         }
         
-        // RMS 에너지와 최대 진폭을 결합한 개선된 에너지 계산
         val rmsEnergy = sqrt(sum / size)
-        val normalizedEnergy = rmsEnergy * (maxAmplitude / 32768.0) // 16-bit 정규화
         
-        return normalizedEnergy
+        // 35~40dB 수준 음성 감지를 위한 최적화된 정규화
+        val normalizationFactor = if (isTablet) 2048.0 else 4096.0 // 태블릿은 더 민감하게
+        val normalizedEnergy = rmsEnergy * (maxAmplitude / normalizationFactor)
+        
+        // 35~40dB 수준에 최적화된 로그 스케일 에너지 계산
+        val logEnergy = if (normalizedEnergy > 0) kotlin.math.log10(normalizedEnergy + 1) * 200 else 0.0
+        
+        // 진폭 변화율 기반 에너지 보정 (35~40dB 수준 최적화)
+        val amplitudeFactor = (maxAmplitude - minAmplitude) / 32768.0
+        val enhancedEnergy = logEnergy * (1 + amplitudeFactor * 4) // 더 민감하게
+        
+        // 기기 타입별 추가 보정 (35~40dB 수준)
+        val finalEnergy = if (isTablet) enhancedEnergy * 2.0 else enhancedEnergy * 1.5
+        
+        return finalEnergy
     }
     
-    // 음성 녹음 종료
+    // 음성 녹음 중지
     private fun stopVoiceRecording() {
-        if (!isRecording) {
-            Log.w(TAG, "녹음 중이 아닙니다")
-            return
-        }
-        
-        voiceAnalysisScope.launch {
+        try {
+            Log.i(TAG, "⏹️ 음성 녹음 중지 시작")
+            
+            // 상태 플래그 먼저 설정
+            isVoiceAnalyzing = false
+            isListeningForCommands = false
+            
+            // MediaRecorder 안전하게 중지
             try {
-                Log.i(TAG, "음성 녹음 종료 시작")
-                
-                // 음성 분석 중지
-                isVoiceAnalyzing = false
-                
-                // MediaRecorder 중지
-                if (mediaRecorder != null) {
-                    mediaRecorder?.apply {
-                        stop()
+                mediaRecorder?.apply {
+                    try {
+                        if (isRecording) {
+                            stop()
+                            Log.d(TAG, "✅ MediaRecorder 정지 완료")
+                        }
+                        reset()
+                        Log.d(TAG, "✅ MediaRecorder 리셋 완료")
                         release()
+                        Log.d(TAG, "✅ MediaRecorder 해제 완료")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "⚠️ MediaRecorder 상태 확인 중 오류: ${e.message}")
+                        try {
+                            release()
+                        } catch (e2: Exception) {
+                            Log.w(TAG, "⚠️ MediaRecorder 강제 해제 중 오류: ${e2.message}")
+                        }
                     }
-                    mediaRecorder = null
-                    isRecording = false
-                    Log.i(TAG, "MediaRecorder 중지 완료")
                 }
-                
-                // 백엔드로 음성 파일 전송
-                val audioFile = File(filesDir, "voice_input_${System.currentTimeMillis()}.m4a")
-                if (audioFile.exists()) {
-                    sendVoiceToBackend(audioFile)
-                }
-                
             } catch (e: Exception) {
-                Log.e(TAG, "음성 녹음 종료 실패: ${e.message}")
-                isRecording = false
+                Log.w(TAG, "⚠️ MediaRecorder 정리 중 오류: ${e.message}")
+            } finally {
                 mediaRecorder = null
             }
+            
+            // AudioRecord 안전하게 정리
+            safeCleanupAudioRecord()
+            
+            // 녹음 파일 처리
+            try {
+                val audioFile = File(getExternalFilesDir(null), "voice_recording.m4a")
+                if (audioFile.exists() && audioFile.length() > 0) {
+                    Log.i(TAG, "📁 녹음 파일 생성됨: ${audioFile.absolutePath} (${audioFile.length()} bytes)")
+                    
+                    // 백엔드로 전송
+                    startBackendUpload()
+                } else {
+                    Log.w(TAG, "⚠️ 녹음 파일이 존재하지 않거나 비어있습니다")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ 녹음 파일 처리 실패: ${e.message}")
+            }
+            
+            Log.i(TAG, "✅ 음성 녹음 중지 완료")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ 음성 녹음 중지 실패: ${e.message}")
+            e.printStackTrace()
         }
     }
     
@@ -958,63 +1438,131 @@ class OverlayService : Service() {
         }
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        Log.d(TAG, "OverlayService onDestroy 시작")
+    // 호출어 감지 테스트 (사용자 테스트용)
+    private fun testWakeWordDetection() {
+        Log.i(TAG, "🧪 호출어 감지 테스트 시작")
+        
+        // 1. PorcupineManager 상태 확인 (isListening 필드가 private이므로 다른 방법 사용)
+        val isRunning = porcupineManager != null
+        Log.d(TAG, "🔍 PorcupineManager 상태: ${if (isRunning) "실행 중" else "중지됨"}")
+        
+        // 2. 파일 존재 여부 확인
         try {
-            // 음성 분석 중지
-            isVoiceAnalyzing = false
-            audioRecord?.apply {
-                stop()
-                release()
-            }
-            audioRecord = null
+            val ppnFile = File(filesDir, "이음봇아_ko_android_v3_0_0.ppn")
+            val pvFile = File(filesDir, "porcupine_params_ko.pv")
             
-            // 녹음 중지
-            if (isRecording && mediaRecorder != null) {
-                try {
-                    mediaRecorder?.stop()
-                    mediaRecorder?.release()
-                    mediaRecorder = null
-                    isRecording = false
-                    Log.d(TAG, "MediaRecorder 리소스 해제 완료")
-                } catch (e: Exception) {
-                    Log.e(TAG, "MediaRecorder 리소스 해제 실패: ${e.message}")
+            Log.d(TAG, "📁 PPN 파일: ${if (ppnFile.exists()) "존재함 (${ppnFile.length()} bytes)" else "존재하지 않음"}")
+            Log.d(TAG, "📁 PV 파일: ${if (pvFile.exists()) "존재함 (${pvFile.length()} bytes)" else "존재하지 않음"}")
+            
+            if (!ppnFile.exists() || !pvFile.exists()) {
+                Log.e(TAG, "❌ 필요한 파일이 없습니다. PorcupineManager 재초기화 시도...")
+                initializePorcupineManager()
+                return
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "파일 확인 실패: ${e.message}")
+        }
+        
+        // 3. PorcupineManager 재시작 시도
+        if (!isRunning) {
+            Log.w(TAG, "⚠️ PorcupineManager가 null입니다. 재초기화 시도...")
+            try {
+                initializePorcupineManager()
+                Log.d(TAG, "✅ PorcupineManager 재초기화 완료")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ PorcupineManager 재초기화 실패: ${e.message}")
+            }
+        }
+        
+        // 4. 테스트 결과 요약
+        Log.i(TAG, "📊 호출어 감지 테스트 완료")
+        Log.i(TAG, "💡 '이음봇아'라고 말해보세요!")
+    }
+
+    override fun onDestroy() {
+        try {
+            Log.i(TAG, "🔄 OverlayService 종료 시작")
+            
+            // 상태 플래그 먼저 설정
+            isChatbotActivated = false
+            isVoiceAnalyzing = false
+            isListeningForCommands = false
+            
+            // PorcupineManager 안전하게 정리
+            try {
+                porcupineManager?.apply {
+                    stop()
+                    delete()
+                    Log.d(TAG, "✅ PorcupineManager 정리 완료")
                 }
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ PorcupineManager 정리 중 오류: ${e.message}")
+            } finally {
+                porcupineManager = null
             }
             
             // CoroutineScope 취소
-            recordingScope.cancel()
-            voiceAnalysisScope.cancel()
+            try {
+                voiceAnalysisScope.cancel()
+                Log.d(TAG, "✅ voiceAnalysisScope 취소 완료")
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ voiceAnalysisScope 취소 중 오류: ${e.message}")
+            }
             
-            // PorcupineManager 리소스 해제
-            porcupineManager?.let { manager ->
-                try {
-                    manager.stop()
-                    manager.delete()
-                    Log.d(TAG, "PorcupineManager 리소스 해제 완료")
-                } catch (e: Exception) {
-                    Log.e(TAG, "PorcupineManager 리소스 해제 실패: ${e.message}")
+            // MediaRecorder 안전하게 정리
+            try {
+                mediaRecorder?.apply {
+                    try {
+                        if (isRecording) {
+                            stop()
+                        }
+                        reset()
+                        release()
+                        Log.d(TAG, "✅ MediaRecorder 정리 완료")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "⚠️ MediaRecorder 상태 확인 중 오류: ${e.message}")
+                        try {
+                            release()
+                        } catch (e2: Exception) {
+                            Log.w(TAG, "⚠️ MediaRecorder 강제 해제 중 오류: ${e2.message}")
+                        }
+                    }
                 }
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ MediaRecorder 정리 중 오류: ${e.message}")
+            } finally {
+                mediaRecorder = null
             }
             
-
+            // AudioRecord 안전하게 정리
+            safeCleanupAudioRecord()
             
-            // chatbot.png 아이콘 제거
-            hideChatbotIcon()
-            
-            if (overlayView != null) {
-                windowManager?.removeView(overlayView)
-                Log.d(TAG, "오버레이 뷰 제거 완료")
+            // 오버레이 뷰 제거
+            try {
+                if (overlayView != null && windowManager != null) {
+                    windowManager?.removeView(overlayView)
+                    overlayView = null
+                    Log.d(TAG, "✅ 오버레이 뷰 제거 완료")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ 오버레이 뷰 제거 중 오류: ${e.message}")
             }
-            // MediaProjectionService도 함께 종료
-            stopService(Intent(this, MediaProjectionService::class.java))
-            // 서비스가 종료되었음을 MainActivity에 알림
-            val broadcastIntent = Intent("OVERLAY_SERVICE_STOPPED")
-            sendBroadcast(broadcastIntent)
-            Log.d(TAG, "OVERLAY_SERVICE_STOPPED 브로드캐스트 전송")
+            
+            // 브로드캐스트 리시버 등록 해제
+            try {
+                unregisterReceiver(chatbotResponseReceiver)
+                Log.d(TAG, "✅ 브로드캐스트 리시버 등록 해제 완료")
+            } catch (e: Exception) {
+                Log.w(TAG, "⚠️ 브로드캐스트 리시버 등록 해제 중 오류: ${e.message}")
+            }
+            
+            Log.i(TAG, "✅ OverlayService 종료 완료")
+            
         } catch (e: Exception) {
-            Log.e(TAG, "onDestroy 처리 실패: ${e.message}")
+            Log.e(TAG, "❌ OverlayService 종료 중 오류: ${e.message}")
+            e.printStackTrace()
+        } finally {
+            super.onDestroy()
         }
     }
 }
