@@ -89,7 +89,7 @@
             android:background="#33FFFFFF"/>
 
         <LinearLayout
-            android:id="@+id/btn_ai"
+            android:id="@+id/btn_chatbot"
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
